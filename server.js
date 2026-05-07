@@ -19,7 +19,8 @@ app.use(cors({
 
     if (
       allowedOrigins.includes(origin) ||
-      origin.endsWith(".myshopify.com")
+      origin.endsWith(".myshopify.com") ||
+      origin.includes(".trycloudflare.com")
     ) {
       return callback(null, true);
     }
