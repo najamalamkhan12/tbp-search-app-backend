@@ -58,12 +58,7 @@ router.get("/search", async (req, res) => {
     // 🔥 GET BOOSTS
     // =========================
     const boosts = await Boost.find({
-      query: {
-        $in: [
-          req.query.q.toLowerCase(),
-          q.toLowerCase()
-        ]
-      },
+      query: originalQuery,
       store: shop
     });
 
