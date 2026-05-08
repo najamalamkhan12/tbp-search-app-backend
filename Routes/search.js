@@ -4,6 +4,7 @@ const fetch = require("node-fetch");
 const Store = require('../Models/store')
 const Analytics = require("../Models/analyticsModel");
 const Synonym = require("../Models/synonymModel");
+const Boost = require("../models/Boost");
 
 const SHOPIFY_URL = `${process.env.SHOPIFY_STORE_URL}/api/graphql.json`;
 
@@ -37,19 +38,27 @@ router.get("/search", async (req, res) => {
       });
     }
     // 🔥 APPLY SYNONYM
-const synonymData = await Synonym.findOne({
-  query: q,
-  store: shop
-});
+    const synonymData = await Synonym.findOne({
+      query: q,
+      store: shop
+    });
 
-if (synonymData && synonymData.synonyms.length > 0) {
+    if (synonymData && synonymData.synonyms.length > 0) {
 
-  console.log("Original Query:", q);
+      console.log("Original Query:", q);
 
-  q = `${q} OR ${synonymData.synonyms[0]}`;
+      q = `${q} OR ${synonymData.synonyms[0]}`;
 
-  console.log("Synonym Applied:", q);
-}
+      console.log("Synonym Applied:", q);
+    }
+
+    // 🔥 GET BOOSTED PRODUCTS
+    const boosts = await Boost.find({
+      query: { $in: [req.query.q, q] },
+      store: shop
+    });
+
+    const boostedIds = boosts.map(b => b.productId);
 
     // 👉 Sirf specific store fetch karo
     const store = await Store.findOne({ domain: shop });
@@ -72,6 +81,7 @@ if (synonymData && synonymData.synonyms.length > 0) {
             products(first: 10, query: "${q}") {
               edges {
                 node {
+                id   
                   title
                   handle
                   vendor
@@ -107,12 +117,34 @@ if (synonymData && synonymData.synonyms.length > 0) {
 
     const products =
       data?.data?.products?.edges?.map(item => ({
+        id: item.node.id, // ✅ IMPORTANT
         title: item.node.title,
         handle: item.node.handle,
         vendor: item.node.vendor,
         image: item.node.images?.edges?.[0]?.node?.url || "",
         price: item.node.variants?.edges?.[0]?.node?.price || "0",
       })) || [];
+
+    // 🔥 APPLY BOOST SORTING
+    if (boostedIds.length > 0) {
+
+      console.log("Boosted IDs:", boostedIds);
+
+      const boosted = [];
+      const normal = [];
+
+      for (let p of products) {
+
+        if (boostedIds.includes(p.id)) {
+          boosted.push(p);
+        } else {
+          normal.push(p);
+        }
+
+      }
+
+      products = [...boosted, ...normal];
+    }
 
     const collections =
       data?.data?.collections?.edges?.map(c => ({
