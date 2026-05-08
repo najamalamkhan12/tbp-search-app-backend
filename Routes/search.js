@@ -54,7 +54,9 @@ router.get("/search", async (req, res) => {
 
     // 🔥 GET BOOSTED PRODUCTS
     const boosts = await Boost.find({
-      query: { $in: [req.query.q, q] },
+      query: {
+        $in: [req.query.q.toLowerCase(), q.toLowerCase()]
+      },
       store: shop
     });
 
