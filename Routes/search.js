@@ -50,7 +50,7 @@ router.get("/search", async (req, res) => {
     if (synonymData && synonymData.synonyms.length > 0) {
       console.log("Original Query:", q);
 
-      q = `${q} OR ${synonymData.synonyms[0]}`;
+      q = synonymData.synonyms[0];
 
       console.log("Synonym Applied:", q);
     }
