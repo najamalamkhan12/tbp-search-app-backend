@@ -52,22 +52,45 @@ router.get("/search", async (req, res) => {
       console.log("Synonym Applied:", q);
     }
 
-    // 🔥 GET BOOSTED PRODUCTS
+    // 🔥 STEP 1: GET BOOSTS
     const boosts = await Boost.find({
       query: {
         $in: [req.query.q.toLowerCase(), q.toLowerCase()]
       },
       store: shop
     });
-    console.log("Search Query:", req.query.q);
-    console.log("Final Query:", q);
-    console.log("Boost Query Match:", [
-      req.query.q.toLowerCase(),
-      q.toLowerCase()
-    ]);
-    console.log("Boosted IDs:", boostedIds);
 
+    // 🔥 STEP 2: CREATE IDS
     const boostedIds = boosts.map(b => b.productId);
+
+    // 🔥 STEP 3: PRODUCTS FETCH
+    let products = data?.data?.products?.edges?.map(item => ({
+      id: item.node.id,
+      title: item.node.title,
+      handle: item.node.handle,
+      vendor: item.node.vendor,
+      image: item.node.images?.edges?.[0]?.node?.url || "",
+      price: item.node.variants?.edges?.[0]?.node?.price || "0",
+    })) || [];
+
+    // 🔥 STEP 4: APPLY BOOST
+    if (boostedIds.length > 0) {
+
+      const boosted = [];
+      const normal = [];
+
+      for (let p of products) {
+
+        if (boostedIds.includes(p.id)) {
+          boosted.push(p);
+        } else {
+          normal.push(p);
+        }
+
+      }
+
+      products = [...boosted, ...normal];
+    }
 
     // 👉 Sirf specific store fetch karo
     const store = await Store.findOne({ domain: shop });
