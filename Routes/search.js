@@ -3,6 +3,7 @@ const router = express.Router();
 const fetch = require("node-fetch");
 const Store = require('../Models/store')
 const Analytics = require("../Models/analyticsModel");
+const Synonym = require("../Models/synonymModel");
 
 const SHOPIFY_URL = `${process.env.SHOPIFY_STORE_URL}/api/graphql.json`;
 
@@ -35,6 +36,20 @@ router.get("/search", async (req, res) => {
         vendors: []
       });
     }
+    // 🔥 APPLY SYNONYM
+const synonymData = await Synonym.findOne({
+  query: q,
+  store: shop
+});
+
+if (synonymData && synonymData.synonyms.length > 0) {
+
+  console.log("Original Query:", q);
+
+  q = `${q} OR ${synonymData.synonyms[0]}`;
+
+  console.log("Synonym Applied:", q);
+}
 
     // 👉 Sirf specific store fetch karo
     const store = await Store.findOne({ domain: shop });
