@@ -33,9 +33,8 @@ router.get("/search", async (req, res) => {
     let { q, shop } = req.query;
 
     shop = shop
-      .replace("https://", "")
-      .replace("http://", "")
-      .replace("/", "")
+      .replace(/^https?:\/\//, "")
+      .replace(/\/$/, "")
       .trim()
       .toLowerCase();
 

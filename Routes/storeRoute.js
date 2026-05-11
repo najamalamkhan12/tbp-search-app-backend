@@ -162,19 +162,18 @@ router.post("/store/save", async (req, res) => {
     }
 
     // =========================
-    // NORMALIZE DOMAIN
+    // CLEAN DOMAIN
     // =========================
     domain = domain
-      .replace("https://", "")
-      .replace("http://", "")
-      .replace("/", "")
+      .replace(/^https?:\/\//, "")
+      .replace(/\/$/, "")
       .trim()
       .toLowerCase();
 
-    console.log("NORMALIZED DOMAIN:", domain);
+    console.log("SAVING DOMAIN:", domain);
 
     // =========================
-    // CHECK EXISTING
+    // FIND STORE
     // =========================
     const existingStore =
       await Store.findOne({
@@ -192,9 +191,6 @@ router.post("/store/save", async (req, res) => {
       existingStore.shopName =
         shopName;
 
-      existingStore.domain =
-        domain;
-
       await existingStore.save();
 
       console.log("STORE UPDATED");
@@ -206,7 +202,7 @@ router.post("/store/save", async (req, res) => {
     }
 
     // =========================
-    // CREATE NEW
+    // CREATE
     // =========================
     await Store.create({
       domain,
