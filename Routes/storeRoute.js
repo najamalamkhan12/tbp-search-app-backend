@@ -145,12 +145,15 @@ router.post("/store/save", async (req, res) => {
 
   try {
 
-    const {
+    let {
       domain,
       accessToken,
       shopName
     } = req.body;
 
+    // =========================
+    // VALIDATION
+    // =========================
     if (!domain || !accessToken) {
 
       return res.status(400).json({
@@ -158,12 +161,29 @@ router.post("/store/save", async (req, res) => {
       });
     }
 
+    // =========================
+    // NORMALIZE DOMAIN
+    // =========================
+    domain = domain
+      .replace("https://", "")
+      .replace("http://", "")
+      .replace("/", "")
+      .trim()
+      .toLowerCase();
+
+    console.log("NORMALIZED DOMAIN:", domain);
+
+    // =========================
     // CHECK EXISTING
+    // =========================
     const existingStore =
       await Store.findOne({
         domain
       });
 
+    // =========================
+    // UPDATE
+    // =========================
     if (existingStore) {
 
       existingStore.accessToken =
@@ -172,7 +192,12 @@ router.post("/store/save", async (req, res) => {
       existingStore.shopName =
         shopName;
 
+      existingStore.domain =
+        domain;
+
       await existingStore.save();
+
+      console.log("STORE UPDATED");
 
       return res.json({
         success: true,
@@ -180,12 +205,16 @@ router.post("/store/save", async (req, res) => {
       });
     }
 
+    // =========================
     // CREATE NEW
+    // =========================
     await Store.create({
       domain,
       accessToken,
       shopName
     });
+
+    console.log("STORE CREATED");
 
     res.json({
       success: true,

@@ -32,6 +32,13 @@ router.get("/search", async (req, res) => {
 
     let { q, shop } = req.query;
 
+    shop = shop
+      .replace("https://", "")
+      .replace("http://", "")
+      .replace("/", "")
+      .trim()
+      .toLowerCase();
+
     const originalQuery =
       (q || "").toLowerCase().trim();
 
@@ -147,8 +154,8 @@ router.get("/search", async (req, res) => {
         ]
 
       })
-      .limit(20)
-      .lean();
+        .limit(20)
+        .lean();
 
     // =========================
     // 🔥 FORMAT PRODUCTS
@@ -233,28 +240,28 @@ router.get("/search", async (req, res) => {
           }).lean()
         )
 
-        .flatMap(
-          p => p.collections || []
-        )
+          .flatMap(
+            p => p.collections || []
+          )
 
-        .filter(c => {
+          .filter(c => {
 
-          const lower =
-            c.toLowerCase();
+            const lower =
+              c.toLowerCase();
 
-          return (
+            return (
 
-            lower.includes(finalQuery) ||
+              lower.includes(finalQuery) ||
 
-            vendors.some(v =>
-              lower.includes(
-                v.toLowerCase()
+              vendors.some(v =>
+                lower.includes(
+                  v.toLowerCase()
+                )
               )
-            )
 
-          );
+            );
 
-        })
+          })
 
       )
 
