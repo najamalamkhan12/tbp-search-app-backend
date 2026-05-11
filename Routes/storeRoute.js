@@ -141,7 +141,7 @@ router.put("/store/:id", async (req, res) => {
 });
 
 // SAVE STORE
-router.post("/save", async (req, res) => {
+router.post("/store/save", async (req, res) => {
 
   try {
 
