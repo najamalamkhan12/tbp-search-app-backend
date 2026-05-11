@@ -140,4 +140,69 @@ router.put("/store/:id", async (req, res) => {
   }
 });
 
+// SAVE STORE
+router.post("/save", async (req, res) => {
+
+  try {
+
+    const {
+      domain,
+      accessToken,
+      shopName
+    } = req.body;
+
+    if (!domain || !accessToken) {
+
+      return res.status(400).json({
+        error: "Missing fields"
+      });
+    }
+
+    // CHECK EXISTING
+    const existingStore =
+      await Store.findOne({
+        domain
+      });
+
+    if (existingStore) {
+
+      existingStore.accessToken =
+        accessToken;
+
+      existingStore.shopName =
+        shopName;
+
+      await existingStore.save();
+
+      return res.json({
+        success: true,
+        message: "Store updated"
+      });
+    }
+
+    // CREATE NEW
+    await Store.create({
+      domain,
+      accessToken,
+      shopName
+    });
+
+    res.json({
+      success: true,
+      message: "Store saved"
+    });
+
+  } catch (err) {
+
+    console.log(
+      "STORE SAVE ERROR:",
+      err
+    );
+
+    res.status(500).json({
+      error: err.message
+    });
+  }
+});
+
 module.exports = router;
