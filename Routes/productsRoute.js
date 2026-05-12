@@ -309,7 +309,7 @@ router.post("/sync-collections", async (req, res) => {
     // =========================
     const customResponse = await fetch(
 
-      `https://${shop}/admin/api/2024-01/custom_collections.json?limit=250`,
+      `https://${shop}/admin/api/2025-01/custom_collections.json?limit=250`,
 
       {
         headers: {
@@ -329,7 +329,7 @@ router.post("/sync-collections", async (req, res) => {
     // =========================
     const smartResponse = await fetch(
 
-      `https://${shop}/admin/api/2024-01/smart_collections.json?limit=250`,
+      `https://${shop}/admin/api/2025-01/smart_collections.json?limit=250`,
 
       {
         headers: {
@@ -343,6 +343,32 @@ router.post("/sync-collections", async (req, res) => {
 
     const smartData =
       await smartResponse.json();
+    console.log("SHOP:", shop);
+
+    console.log(
+      "TOKEN:",
+      store.accessToken
+    );
+
+    console.log(
+      "CUSTOM STATUS:",
+      customResponse.status
+    );
+
+    console.log(
+      "SMART STATUS:",
+      smartResponse.status
+    );
+
+    console.log(
+      "CUSTOM DATA:",
+      customData
+    );
+
+    console.log(
+      "SMART DATA:",
+      smartData
+    );
 
     // =========================
     // 🔥 MERGE COLLECTIONS
