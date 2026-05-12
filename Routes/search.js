@@ -144,13 +144,15 @@ router.get("/search", async (req, res) => {
 
           {
             tags: {
-              $elemMatch: regex
+              $regex: finalQuery,
+              $options: "i"
             }
           },
 
           {
             collections: {
-              $elemMatch: regex
+              $regex: finalQuery,
+              $options: "i"
             }
           }
 
@@ -158,14 +160,14 @@ router.get("/search", async (req, res) => {
 
       })
 
-      // 🔥 NEW PRODUCTS FIRST
-      .sort({
-        createdAt: -1
-      })
+        // 🔥 NEW PRODUCTS FIRST
+        .sort({
+          createdAt: -1
+        })
 
-      .limit(20)
+        .limit(20)
 
-      .lean();
+        .lean();
 
     // =========================
     // 🔥 FORMAT PRODUCTS
@@ -256,9 +258,9 @@ router.get("/search", async (req, res) => {
 
       })
 
-      .select("collections")
+        .select("collections")
 
-      .lean();
+        .lean();
 
     const collections = [
 
@@ -272,36 +274,36 @@ router.get("/search", async (req, res) => {
 
     ]
 
-    .filter(c => {
+      .filter(c => {
 
-      const lower =
-        c.toLowerCase();
+        const lower =
+          c.toLowerCase();
 
-      return (
+        return (
 
-        lower.includes(finalQuery) ||
+          lower.includes(finalQuery) ||
 
-        vendors.some(v =>
-          lower.includes(
-            v.toLowerCase()
+          vendors.some(v =>
+            lower.includes(
+              v.toLowerCase()
+            )
           )
-        )
 
-      );
-    })
+        );
+      })
 
-    // 🔥 LIMIT
-    .slice(0, 5)
+      // 🔥 LIMIT
+      .slice(0, 5)
 
-    .map(c => ({
+      .map(c => ({
 
-      title: c,
+        title: c,
 
-      handle:
-        c.toLowerCase()
-          .replace(/\s+/g, "-")
+        handle:
+          c.toLowerCase()
+            .replace(/\s+/g, "-")
 
-    }));
+      }));
 
     // =========================
     // 🔥 RESPONSE

@@ -8,41 +8,31 @@ const app = express();
 
 app.use("/webhooks", express.raw({ type: "application/json" }));
 app.use(express.json());
+const allowedOrigins = [
+  "https://admin.shopify.com",
+];
 
 app.use(cors({
-  origin: (origin, callback) => {
+  origin: function (origin, callback) {
 
-    // ✅ allow server-to-server / postman / worker
+    // POSTMAN / SERVER REQUESTS
     if (!origin) {
       return callback(null, true);
     }
 
-    // ✅ Shopify Admin
-    if (origin.includes("shopify.com")) {
-      return callback(null, true);
-    }
+    console.log("ORIGIN:", origin);
 
-    // ✅ Shopify Stores
-    if (origin.includes(".myshopify.com")) {
-      return callback(null, true);
-    }
-
-    // ✅ Cloudflare tunnels
-    if (origin.includes(".trycloudflare.com")) {
-      return callback(null, true);
-    }
-
-    // ✅ Your worker
+    // SHOPIFY STORES
     if (
-      origin ===
-      "https://tbp-search-app.tbp-search.workers.dev"
+      origin.endsWith(".myshopify.com") ||
+      origin.includes(".trycloudflare.com") ||
+      origin.includes(".workers.dev") ||
+      origin.includes("nainpreet.com")
     ) {
       return callback(null, true);
     }
 
-    console.log("BLOCKED ORIGIN:", origin);
-
-    return callback(null, true); // 🔥 TEMPORARY allow all
+    return callback(null, true); // 🔥 TEMP ALLOW ALL
   },
 
   credentials: true,
