@@ -1,16 +1,5 @@
 const crypto = require("crypto");
 
-
-router.use((req, res, next) => {
-
-  console.log(
-    "🔥 WEBHOOK ROUTE HIT:",
-    req.path
-  );
-
-  next();
-});
-
 const verifyShopifyWebhook = (
   req,
   res,

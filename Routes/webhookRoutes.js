@@ -1,6 +1,15 @@
 const express = require("express");
-
 const router = express.Router();
+
+router.use((req, res, next) => {
+
+  console.log(
+    "🔥 WEBHOOK ROUTE HIT:",
+    req.path
+  );
+
+  next();
+});
 
 const Product =
   require("../Models/productModel");
