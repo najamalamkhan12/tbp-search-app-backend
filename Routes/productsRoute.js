@@ -388,15 +388,20 @@ router.post(
       );
 
       // =====================================
-      // 🔥 ONLY COLLECTIONS
-      // WITH PRODUCTS
+      // 🔥 FILTER VALID COLLECTIONS
       // =====================================
       const filteredCollections =
-        allCollections.filter(c =>
+        allCollections.filter(c => {
 
-          (c.products_count || 0) > 0
+          return (
 
-        );
+            c.title &&
+
+            c.handle
+
+          );
+
+        });
 
       console.log(
         "FILTERED COLLECTIONS:",
@@ -444,9 +449,9 @@ router.post(
                 // 🔥 IMPORTANT
                 // latest ranking fix
                 shopifyCreatedAt:
+                  c.created_at ||
                   c.published_at ||
                   c.updated_at ||
-                  c.created_at ||
                   new Date(),
 
                 searchableText: `

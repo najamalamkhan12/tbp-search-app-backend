@@ -247,29 +247,23 @@ router.get("/search", async (req, res) => {
     // =========================
     // 🔥 COLLECTIONS
     // =========================
-    let collections =
-      await Collection.find(
+    const collections =
+      await Collection.find({
 
-        {
+        store: shop,
 
-          store: shop,
-
-          $text: {
-            $search: finalQuery
-          }
-
-        },
-
-        {
-
-          score: {
-            $meta: "textScore"
-          }
-
+        $text: {
+          $search: finalQuery
         }
 
-      )
-        .limit(20)
+      })
+
+        .sort({
+          shopifyCreatedAt: -1
+        })
+
+        .limit(10)
+
         .lean();
 
 
