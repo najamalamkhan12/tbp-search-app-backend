@@ -33,14 +33,19 @@ router.get("/search", async (req, res) => {
 
     let { q, shop } = req.query;
 
-    shop = shop
+    // =========================
+    // 🔥 CLEAN INPUTS
+    // =========================
+    shop = (shop || "")
       .replace(/^https?:\/\//, "")
       .replace(/\/$/, "")
       .trim()
       .toLowerCase();
 
+    q = (q || "").trim();
+
     const originalQuery =
-      (q || "").toLowerCase().trim();
+      q.toLowerCase();
 
     if (!q || !shop) {
 
@@ -60,7 +65,8 @@ router.get("/search", async (req, res) => {
         store: shop
       });
 
-    let finalQuery = originalQuery;
+    let finalQuery =
+      originalQuery;
 
     if (
       synonymData &&
@@ -93,7 +99,9 @@ router.get("/search", async (req, res) => {
       });
 
     const boostedIds =
-      boosts.map(b => String(b.productId));
+      boosts.map(b =>
+        String(b.productId)
+      );
 
     console.log(
       "Boosted IDs:",
@@ -101,7 +109,13 @@ router.get("/search", async (req, res) => {
     );
 
     // =========================
-    // 🔥 SEARCH PRODUCTS FROM DB
+    // 🔥 SEARCH REGEX
+    // =========================
+    const regex =
+      new RegExp(finalQuery, "i");
+
+    // =========================
+    // 🔥 SEARCH PRODUCTS
     // =========================
     let products =
       await Product.find({
@@ -113,78 +127,83 @@ router.get("/search", async (req, res) => {
         $or: [
 
           {
-            title: {
-              $regex: finalQuery,
-              $options: "i"
-            }
+            title: regex
           },
 
           {
-            vendor: {
-              $regex: finalQuery,
-              $options: "i"
-            }
+            vendor: regex
           },
 
           {
-            productType: {
-              $regex: finalQuery,
-              $options: "i"
-            }
+            productType: regex
+          },
+
+          {
+            searchableText: regex
           },
 
           {
             tags: {
-              $elemMatch: {
-                $regex: finalQuery,
-                $options: "i"
-              }
+              $elemMatch: regex
             }
           },
 
           {
             collections: {
-              $elemMatch: {
-                $regex: finalQuery,
-                $options: "i"
-              }
+              $elemMatch: regex
             }
           }
 
         ]
 
       })
-        .limit(20)
-        .lean();
+
+      // 🔥 NEW PRODUCTS FIRST
+      .sort({
+        createdAt: -1
+      })
+
+      .limit(20)
+
+      .lean();
 
     // =========================
     // 🔥 FORMAT PRODUCTS
     // =========================
     products = products.map(p => ({
 
-      id: String(p.productId),
+      id:
+        String(p.productId),
 
-      title: p.title,
+      title:
+        p.title || "",
 
-      handle: p.handle,
+      handle:
+        p.handle || "",
 
-      vendor: p.vendor,
+      vendor:
+        p.vendor || "",
 
-      image: p.image || "",
+      image:
+        p.image || "",
 
-      price: p.price || "0"
+      price:
+        p.price || "0",
+
+      createdAt:
+        p.createdAt
 
     }));
 
     // =========================
-    // 🔥 APPLY BOOST SORTING
+    // 🔥 APPLY BOOSTS
     // =========================
     if (boostedIds.length > 0) {
 
       const boosted = [];
       const normal = [];
 
-      for (let p of products) {
+      for (const p of products) {
 
         if (
           boostedIds.includes(
@@ -200,6 +219,7 @@ router.get("/search", async (req, res) => {
         }
       }
 
+      // 🔥 BOOSTED FIRST
       products = [
         ...boosted,
         ...normal
@@ -224,57 +244,64 @@ router.get("/search", async (req, res) => {
     // =========================
     // 🔥 COLLECTIONS
     // =========================
+    const collectionDocs =
+      await Product.find({
+
+        store: shop,
+
+        collections: {
+          $exists: true,
+          $ne: []
+        }
+
+      })
+
+      .select("collections")
+
+      .lean();
+
     const collections = [
 
       ...new Set(
 
-        (
-          await Product.find({
-
-            store: shop,
-
-            collections: {
-              $exists: true
-            }
-
-          }).lean()
+        collectionDocs.flatMap(
+          p => p.collections || []
         )
-
-          .flatMap(
-            p => p.collections || []
-          )
-
-          .filter(c => {
-
-            const lower =
-              c.toLowerCase();
-
-            return (
-
-              lower.includes(finalQuery) ||
-
-              vendors.some(v =>
-                lower.includes(
-                  v.toLowerCase()
-                )
-              )
-
-            );
-
-          })
 
       )
 
-    ].slice(0, 5)
-      .map(c => ({
+    ]
 
-        title: c,
+    .filter(c => {
 
-        handle: c
-          .toLowerCase()
+      const lower =
+        c.toLowerCase();
+
+      return (
+
+        lower.includes(finalQuery) ||
+
+        vendors.some(v =>
+          lower.includes(
+            v.toLowerCase()
+          )
+        )
+
+      );
+    })
+
+    // 🔥 LIMIT
+    .slice(0, 5)
+
+    .map(c => ({
+
+      title: c,
+
+      handle:
+        c.toLowerCase()
           .replace(/\s+/g, "-")
 
-      }));
+    }));
 
     // =========================
     // 🔥 RESPONSE
