@@ -247,37 +247,40 @@ router.get("/search", async (req, res) => {
     // =========================
     // 🔥 COLLECTIONS
     // =========================
-
     const collections =
-      await Collection.find({
+      await Collection.find(
 
-        store: shop,
+        {
 
-        $or: [
+          store: shop,
 
-          {
-            title: {
-              $regex: finalQuery,
-              $options: "i"
-            }
-          },
-
-          {
-            searchableText: {
-              $regex: finalQuery,
-              $options: "i"
-            }
+          $text: {
+            $search: finalQuery
           }
 
-        ]
+        },
 
-      })
+        {
+
+          score: {
+            $meta: "textScore"
+          }
+
+        }
+
+      )
 
         .sort({
+
+          score: {
+            $meta: "textScore"
+          },
+
           createdAt: -1
+
         })
 
-        .limit(5)
+        .limit(10)
 
         .lean();
 
@@ -286,7 +289,9 @@ router.get("/search", async (req, res) => {
 
         title: c.title,
 
-        handle: c.handle
+        handle: c.handle,
+
+        image: c.image || ""
 
       }));
 
