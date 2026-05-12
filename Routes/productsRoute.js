@@ -385,10 +385,82 @@ router.post(
       );
 
       // =====================================
+      // 🔥 FILTER COLLECTIONS
+      // ONLY ACTIVE PRODUCTS COLLECTIONS
+      // =====================================
+
+      const filteredCollections = [];
+
+      for (const c of allCollections) {
+
+        try {
+
+          const response = await fetch(
+            `https://${shop}/admin/api/2025-01/graphql.json`,
+            {
+              method: "POST",
+
+              headers: {
+                "X-Shopify-Access-Token":
+                  store.accessToken,
+
+                "Content-Type":
+                  "application/json"
+              },
+
+              body: JSON.stringify({
+                query: `
+          query {
+
+            collection(
+              id: "gid://shopify/Collection/${c.id}"
+            ) {
+
+              products(
+                first: 1,
+                query: "status:active"
+              ) {
+
+                edges {
+                  node {
+                    id
+                  }
+                }
+              }
+            }
+          }
+          `
+              })
+            }
+          );
+
+          const data =
+            await response.json();
+
+          const activeProducts =
+            data?.data?.collection
+              ?.products?.edges || [];
+
+          // ✅ ONLY SAVE IF ACTIVE PRODUCT EXISTS
+          if (activeProducts.length > 0) {
+
+            filteredCollections.push(c);
+          }
+
+        } catch (err) {
+
+          console.log(
+            "COLLECTION FILTER ERROR:",
+            err.message
+          );
+        }
+      }
+
+      // =====================================
       // 🔥 BULK OPERATIONS
       // =====================================
       const operations =
-        allCollections.map(c => ({
+        filteredCollections.map(c => ({
 
           updateOne: {
 
@@ -422,8 +494,6 @@ router.post(
                 productsCount:
                   c.products_count || 0,
 
-                // 🔥 IMPORTANT
-                // latest ranking fix
                 shopifyCreatedAt:
                   c.published_at ||
                   c.updated_at ||
@@ -431,9 +501,9 @@ router.post(
                   new Date(),
 
                 searchableText: `
-                  ${c.title || ""}
-                  ${c.handle || ""}
-                `
+            ${c.title || ""}
+            ${c.handle || ""}
+          `
                   .toLowerCase()
                   .replace(/\s+/g, " ")
                   .trim()
@@ -482,8 +552,7 @@ router.post(
 
         success: true,
 
-        synced:
-          allCollections.length
+        synced: filteredCollections.length
 
       });
 
