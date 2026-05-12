@@ -1,5 +1,7 @@
 const express = require("express");
 const router = express.Router();
+const Product = require("../Models/productModel");
+const Store = require("../Models/store");
 
 router.use((req, res, next) => {
 
@@ -10,13 +12,6 @@ router.use((req, res, next) => {
 
   next();
 });
-
-const Product =
-  require("../Models/productModel");
-
-const Store =
-  require("../Models/store");
-
 const verifyShopifyWebhook =
   require("../middleware/verifyShopifyWebhook");
 
