@@ -168,92 +168,106 @@ router.post("/sync-products", async (req, res) => {
               update: {
 
                 $set: {
+
                   store: shop,
 
-                  collectionId:
-                    String(c.id),
+                  productId: p.id,
 
-                  title:
-                    c.title || "",
+                  title: p.title || "",
 
-                  handle:
-                    c.handle || "",
+                  handle: p.handle || "",
+
+                  vendor: p.vendor || "",
+
+                  productType: p.productType || "",
+
+                  tags: p.tags || [],
+
+                  collections,
 
                   image:
-                    c.image?.src || "",
+                    p.featuredImage?.url || "",
 
-                  productsCount:
-                    0,
+                  price,
 
-                  shopifyCreatedAt:
-                    c.created_at,
+                  stock,
+
+                  status:
+                    p.status || "ACTIVE",
 
                   searchableText: `
-    ${c.title || ""}
-    ${c.handle || ""}
+    ${p.title || ""}
+    ${p.vendor || ""}
+    ${p.productType || ""}
+    ${(p.tags || []).join(" ")}
+    ${collections.join(" ")}
   `
                     .toLowerCase()
                     .replace(/\s+/g, " ")
                     .trim()
-                }
-              },
 
-              upsert: true
-            }
-          };
+                }
+                  .toLowerCase()
+                  .replace(/\s+/g, " ")
+                  .trim()
+              }
+            },
+
+            upsert: true
+          }
         });
 
-      // =========================
-      // 🔥 SAVE BATCH
-      // =========================
-      if (operations.length > 0) {
+// =========================
+// 🔥 SAVE BATCH
+// =========================
+if (operations.length > 0) {
 
-        await Product.bulkWrite(
-          operations
-        );
+  await Product.bulkWrite(
+    operations
+  );
 
-        totalSynced +=
-          operations.length;
-      }
+  totalSynced +=
+    operations.length;
+}
 
-      // =========================
-      // 🔥 PAGINATION
-      // =========================
-      hasNextPage =
-        data?.data?.products
-          ?.pageInfo
-          ?.hasNextPage;
+// =========================
+// 🔥 PAGINATION
+// =========================
+hasNextPage =
+  data?.data?.products
+    ?.pageInfo
+    ?.hasNextPage;
 
-      cursor =
-        products[
-          products.length - 1
-        ]?.cursor;
+cursor =
+  products[
+    products.length - 1
+  ]?.cursor;
 
-      console.log(
-        "SYNCED:",
-        totalSynced
-      );
+console.log(
+  "SYNCED:",
+  totalSynced
+);
     }
 
-    // =========================
-    // ✅ DONE
-    // =========================
-    res.json({
-      success: true,
-      totalSynced
-    });
+// =========================
+// ✅ DONE
+// =========================
+res.json({
+  success: true,
+  totalSynced
+});
 
   } catch (err) {
 
-    console.log(
-      "SYNC ERROR:",
-      err
-    );
+  console.log(
+    "SYNC ERROR:",
+    err
+  );
 
-    res.status(500).json({
-      error: err.message
-    });
-  }
+  res.status(500).json({
+    error: err.message
+  });
+}
 });
 
 router.post(
