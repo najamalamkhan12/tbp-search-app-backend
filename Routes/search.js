@@ -28,6 +28,15 @@ router.post("/stores/add", async (req, res) => {
   }
 });
 
+// =========================
+// 🔥 VENDOR CACHE
+// =========================
+
+const vendorCache = {};
+
+const CACHE_TIME =
+  1000 * 60 * 10; // 10 min
+
 router.get("/search", async (req, res) => {
 
   try {
@@ -115,19 +124,52 @@ router.get("/search", async (req, res) => {
     // =========================
     // 🔥 GET ALL VENDORS
     // =========================
-    const vendorDocs =
-      await Product.distinct(
-        "vendor",
-        {
-          store: shop,
-          status: "ACTIVE"
-        }
-      );
 
-    const uniqueVendors =
-      vendorDocs
-        .filter(Boolean)
-        .map(v => v.trim());
+    let uniqueVendors = [];
+
+    // CACHE EXISTS
+    if (
+
+      vendorCache[shop] &&
+
+      Date.now() -
+      vendorCache[shop].timestamp
+      < CACHE_TIME
+
+    ) {
+
+      uniqueVendors =
+        vendorCache[shop].data;
+
+    } else {
+
+      const vendorDocs =
+        await Product.distinct(
+          "vendor",
+          {
+            store: shop,
+            status: "ACTIVE"
+          }
+        );
+
+      uniqueVendors =
+        vendorDocs
+
+          .filter(Boolean)
+
+          .map(v => v.trim());
+
+      // SAVE CACHE
+      vendorCache[shop] = {
+
+        data:
+          uniqueVendors,
+
+        timestamp:
+          Date.now()
+
+      };
+    }
 
     // =========================
     // 🔥 NORMALIZE QUERY
@@ -242,10 +284,11 @@ router.get("/search", async (req, res) => {
       // ✅ VENDOR MATCH
       searchConditions.push({
 
-        vendor: new RegExp(
-          `^${detectedVendor}$`,
-          "i"
-        )
+        vendor: {
+          $regex:
+            detectedVendor,
+          $options: "i"
+        }
 
       });
 
@@ -263,19 +306,17 @@ router.get("/search", async (req, res) => {
 
           $or: [
 
-            {
-              title: {
-                $in:
-                  remainingTokens.map(
-                    t =>
-                      new RegExp(
-                        t,
-                        "i"
-                      )
-                  )
-              }
-            },
+            // TOKEN TITLE MATCHES
+            ...remainingTokens.map(t => ({
 
+              title: {
+                $regex: t,
+                $options: "i"
+              }
+
+            })),
+
+            // SEARCHABLE TEXT
             {
               searchableText:
                 new RegExp(
@@ -284,6 +325,7 @@ router.get("/search", async (req, res) => {
                 )
             },
 
+            // TAGS
             {
               tags: {
                 $regex:
@@ -292,6 +334,7 @@ router.get("/search", async (req, res) => {
               }
             },
 
+            // COLLECTIONS
             {
               collections: {
                 $regex:
@@ -400,13 +443,28 @@ router.get("/search", async (req, res) => {
         (p.vendor || "")
           .toLowerCase();
 
+      const searchable =
+        (p.searchableText || "")
+          .toLowerCase();
+
       // =========================
       // 🔥 EXACT TITLE
       // =========================
       if (
         title === normalizedQuery
       ) {
-        score += 150;
+        score += 1000;
+      }
+
+      // =========================
+      // 🔥 TITLE STARTS WITH
+      // =========================
+      if (
+        title.startsWith(
+          normalizedQuery
+        )
+      ) {
+        score += 600;
       }
 
       // =========================
@@ -417,19 +475,32 @@ router.get("/search", async (req, res) => {
           normalizedQuery
         )
       ) {
-        score += 100;
+        score += 400;
       }
 
-      // =========================
-      // 🔥 EXACT VENDOR
-      // =========================
+      // EXACT VENDOR
       if (
+
         detectedVendor &&
+
         vendor ===
-          detectedVendor
-            .toLowerCase()
+        detectedVendor.toLowerCase()
+
       ) {
-        score += 90;
+        score += 500;
+      }
+
+      // TITLE HAS VENDOR
+      if (
+
+        detectedVendor &&
+
+        title.includes(
+          detectedVendor.toLowerCase()
+        )
+
+      ) {
+        score += 250;
       }
 
       // =========================
@@ -437,41 +508,97 @@ router.get("/search", async (req, res) => {
       // =========================
       if (
         remainingQuery &&
-        title.includes(
-          remainingQuery
-        )
+        remainingQuery
+          .split(" ")
+          .every(word =>
+            title.includes(word)
+          )
       ) {
-        score += 70;
+        score += 350;
       }
 
       // =========================
-      // 🔥 TOKEN SCORE
+      // 🔥 SEARCHABLE TEXT
+      // =========================
+      if (
+        searchable.includes(
+          normalizedQuery
+        )
+      ) {
+        score += 150;
+      }
+
+      // =========================
+      // 🔥 TOKEN BOOST
       // =========================
       tokens.forEach(token => {
 
+        // TITLE TOKEN
         if (
           title.includes(token)
         ) {
-          score += 15;
+          score += 80;
         }
 
+        // VENDOR TOKEN
         if (
           vendor.includes(token)
         ) {
-          score += 10;
+          score += 50;
+        }
+
+        // SEARCHABLE TOKEN
+        if (
+          searchable.includes(token)
+        ) {
+          score += 30;
         }
 
       });
 
       // =========================
-      // 🔥 BOOST SCORE
+      // 🔥 BOOST PRODUCTS
       // =========================
       if (
         boostedIds.includes(
           String(p.productId)
         )
       ) {
-        score += 500;
+        score += 2000;
+      }
+
+      // =========================
+      // 🔥 LATEST PRODUCTS BOOST
+      // =========================
+
+      const created =
+        new Date(
+          p.createdAt
+        ).getTime();
+
+      const now =
+        Date.now();
+
+      const daysOld =
+        (now - created) /
+        (1000 * 60 * 60 * 24);
+
+      // VERY NEW
+      if (daysOld <= 7) {
+
+        score += 300;
+
+      } else if (
+        daysOld <= 30
+      ) {
+
+        score += 200;
+
+      } else if (
+        daysOld <= 90
+      ) {
+
+        score += 100;
       }
 
       return {
@@ -515,13 +642,10 @@ router.get("/search", async (req, res) => {
       if (
         b.score !== a.score
       ) {
-
-        return (
-          b.score - a.score
-        );
+        return b.score - a.score;
       }
 
-      // NEWEST FIRST
+      // NEWEST SECOND
       return (
         new Date(b.createdAt) -
         new Date(a.createdAt)
@@ -532,32 +656,66 @@ router.get("/search", async (req, res) => {
     // =========================
     // 🔥 COLLECTIONS
     // =========================
-    let collections =
-      await Collection.find({
+    let collectionQuery = {
 
-        store: shop,
+      store: shop
 
-        $or: [
+    };
 
-          {
-            title: {
-              $regex:
-                normalizedQuery,
-              $options: "i"
-            }
-          },
+    // =========================
+    // VENDOR COLLECTIONS
+    // =========================
 
-          {
-            handle: {
-              $regex:
-                normalizedQuery,
-              $options: "i"
-            }
+    if (detectedVendor) {
+
+      collectionQuery.$or = [
+
+        {
+          vendor: {
+            $regex:
+              detectedVendor,
+            $options: "i"
           }
+        },
 
-        ]
+        {
+          title: {
+            $regex:
+              detectedVendor,
+            $options: "i"
+          }
+        }
 
-      })
+      ];
+
+    } else {
+
+      collectionQuery.$or = [
+
+        {
+          title: {
+            $regex:
+              normalizedQuery,
+            $options: "i"
+          }
+        },
+
+        {
+          handle: {
+            $regex:
+              normalizedQuery,
+            $options: "i"
+          }
+        }
+
+      ];
+
+    }
+
+    let collections =
+      await Collection.find(
+        collectionQuery
+      )
 
         .sort({
           shopifyCreatedAt: -1
