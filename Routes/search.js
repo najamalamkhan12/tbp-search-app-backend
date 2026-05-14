@@ -444,197 +444,163 @@ router.get("/search", async (req, res) => {
           .toLowerCase();
 
       const searchable =
-        (p.searchableText || "")
-          .toLowerCase();
+        (
+          p.searchableText || ""
+        ).toLowerCase();
 
-      // =========================
-      // 🔥 EXACT TITLE
-      // =========================
+      const collections =
+        (
+          p.collections || ""
+        ).toLowerCase();
+
+      const tags =
+        (
+          p.tags || ""
+        ).toLowerCase();
+
+      // ======================
+      // EXACT QUERY
+      // ======================
+
       if (
         title === normalizedQuery
       ) {
-        score += 1000;
+        score += 100000;
       }
 
-      // =========================
-      // 🔥 TITLE STARTS WITH
-      // =========================
-      if (
-        title.startsWith(
-          normalizedQuery
-        )
-      ) {
-        score += 600;
-      }
+      // ======================
+      // TITLE CONTAINS QUERY
+      // ======================
 
-      // =========================
-      // 🔥 TITLE CONTAINS
-      // =========================
       if (
         title.includes(
           normalizedQuery
         )
       ) {
-        score += 400;
+        score += 50000;
       }
 
-      // EXACT VENDOR
+      // ======================
+      // VENDOR MATCH
+      // ======================
+
       if (
 
         detectedVendor &&
 
-        vendor ===
-        detectedVendor.toLowerCase()
+        vendor.includes(
+          detectedVendor
+            .toLowerCase()
+        )
 
       ) {
-        score += 500;
+
+        score += 80000;
+
       }
 
+      // ======================
       // TITLE HAS VENDOR
+      // ======================
+
       if (
 
         detectedVendor &&
 
         title.includes(
-          detectedVendor.toLowerCase()
+          detectedVendor
+            .toLowerCase()
         )
 
       ) {
-        score += 250;
+
+        score += 30000;
+
       }
 
-      // =========================
-      // 🔥 REMAINING QUERY
-      // =========================
-      if (
-        remainingQuery &&
-        remainingQuery
-          .split(" ")
-          .every(word =>
-            title.includes(word)
-          )
-      ) {
-        score += 350;
-      }
+      // ======================
+      // TOKEN MATCHING
+      // ======================
 
-      // =========================
-      // 🔥 SEARCHABLE TEXT
-      // =========================
-      if (
-        searchable.includes(
-          normalizedQuery
-        )
-      ) {
-        score += 150;
-      }
+      remainingTokens.forEach(
+        token => {
 
-      // =========================
-      // 🔥 TOKEN BOOST
-      // =========================
-      tokens.forEach(token => {
+          if (
+            title.includes(token)
+          ) {
+            score += 12000;
+          }
 
-        // TITLE TOKEN
-        if (
-          title.includes(token)
-        ) {
-          score += 80;
+          if (
+            searchable.includes(
+              token
+            )
+          ) {
+            score += 7000;
+          }
+
+          if (
+            collections.includes(
+              token
+            )
+          ) {
+            score += 5000;
+          }
+
+          if (
+            tags.includes(token)
+          ) {
+            score += 4000;
+          }
+
         }
+      );
 
-        // VENDOR TOKEN
-        if (
-          vendor.includes(token)
-        ) {
-          score += 50;
-        }
-
-        // SEARCHABLE TOKEN
-        if (
-          searchable.includes(token)
-        ) {
-          score += 30;
-        }
-
-      });
-
-      // =========================
-      // 🔥 BOOST PRODUCTS
-      // =========================
-      if (
-        boostedIds.includes(
-          String(p.productId)
-        )
-      ) {
-        score += 2000;
-      }
-
-      // =========================
-      // 🔥 LATEST PRODUCTS BOOST
-      // =========================
+      // ======================
+      // RECENCY BOOST 🔥
+      // ======================
 
       const created =
         new Date(
-          p.createdAt
-        ).getTime();
-
-      const now =
-        Date.now();
+          p.createdAt ||
+          p.shopifyCreatedAt
+        );
 
       const daysOld =
-        (now - created) /
+        (
+          Date.now() -
+          created.getTime()
+        ) /
         (1000 * 60 * 60 * 24);
 
-      // VERY NEW
+      // 2026 / NEWEST PRODUCTS
       if (daysOld <= 7) {
 
-        score += 10000;
+        score += 100000;
 
       } else if (
         daysOld <= 30
       ) {
 
-        score += 7000;
+        score += 70000;
 
       } else if (
         daysOld <= 90
       ) {
 
-        score += 4000;
+        score += 40000;
 
       } else if (
         daysOld <= 180
       ) {
 
-        score += 2000;
+        score += 20000;
+
       }
 
       return {
-
-        id:
-          String(p.productId),
-
-        title:
-          p.title || "",
-
-        handle:
-          p.handle || "",
-
-        vendor:
-          p.vendor || "",
-
-        image:
-          p.image || "",
-
-        price:
-          p.price || "0",
-
-        createdAt:
-          p.createdAt,
-
-        type:
-          "product",
-
+        ...p,
         score
-
       };
 
     });
@@ -642,22 +608,26 @@ router.get("/search", async (req, res) => {
     // =========================
     // 🔥 SORT PRODUCTS
     // =========================
-    products.sort((a, b) => {
 
-      // SCORE FIRST
-      if (
-        b.score !== a.score
-      ) {
-        return b.score - a.score;
-      }
-
-      // NEWEST SECOND
+    if (
+      b.score !== a.score
+    ) {
       return (
-        new Date(b.createdAt) -
-        new Date(a.createdAt)
+        b.score - a.score
       );
+    }
 
-    });
+    // THEN LATEST
+    return (
+      new Date(
+        b.createdAt ||
+        b.shopifyCreatedAt
+      ) -
+
+      new Date(
+        a.createdAt ||
+        a.shopifyCreatedAt
+      ));
 
     // =========================
     // 🔥 COLLECTIONS
