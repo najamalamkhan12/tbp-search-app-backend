@@ -434,7 +434,19 @@ router.get("/search", async (req, res) => {
 
         .limit(80)
 
-        .lean();
+        .lean()
+        .select(`
+  title
+  handle
+  vendor
+  image
+  price
+  createdAt
+  shopifyCreatedAt
+  collections
+  searchableText
+  tags
+`)
 
     // =========================
     // 🔥 FORMAT + SCORE PRODUCTS
