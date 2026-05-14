@@ -246,9 +246,10 @@ router.get("/search", async (req, res) => {
     );
 
     // =========================
-    // 🔥 SMART VENDOR SUGGESTIONS
+    // 🔥 SMART VENDORS
     // =========================
-    const matchedVendors =
+
+    let vendorResults =
 
       uniqueVendors
 
@@ -256,28 +257,78 @@ router.get("/search", async (req, res) => {
 
           v
             .toLowerCase()
-            .startsWith(
+            .includes(
               normalizedQuery
             )
 
         )
 
-        .slice(0, 10)
+        .map(vendor => {
 
-        .map(v => ({
+          // PRODUCTS OF THIS VENDOR
+          const vendorProducts =
 
-          title: v,
+            products.filter(p =>
 
-          handle:
-            v
-              .toLowerCase()
-              .replace(/\s+/g, "-"),
+              (
+                p.vendor || ""
+              )
+                .toLowerCase()
+                .includes(
+                  vendor.toLowerCase()
+                )
 
-          type: "vendor",
+            );
 
-          score: 100
+          // LATEST PRODUCT
+          const latestProduct =
 
-        }));
+            vendorProducts.sort((a, b) =>
+
+              new Date(
+                b.createdAt ||
+                b.shopifyCreatedAt
+              ) -
+
+              new Date(
+                a.createdAt ||
+                a.shopifyCreatedAt
+              )
+
+            )[0];
+
+          return {
+
+            title:
+              vendor,
+
+            type:
+              "vendor",
+
+            latestDate:
+
+              latestProduct
+                ?.createdAt ||
+
+              latestProduct
+                ?.shopifyCreatedAt ||
+
+              0,
+
+            score:
+
+              vendorProducts
+                .reduce(
+                  (acc, p) =>
+                    acc + (
+                      p.score || 0
+                    ),
+                  0
+                )
+
+          };
+
+        });
 
     // =========================
     // 🔥 TOKENIZE QUERY
@@ -678,6 +729,123 @@ router.get("/search", async (req, res) => {
     });
 
     // =========================
+    // 🔥 SMART VENDORS
+    // =========================
+
+    let vendorResults =
+
+      uniqueVendors
+
+        .filter(v =>
+
+          v
+            .toLowerCase()
+            .includes(
+              normalizedQuery
+            )
+
+        )
+
+        .map(vendor => {
+
+          // PRODUCTS OF THIS VENDOR
+          const vendorProducts =
+
+            products.filter(p =>
+
+              (
+                p.vendor || ""
+              )
+                .toLowerCase()
+                .includes(
+                  vendor.toLowerCase()
+                )
+
+            );
+
+          // LATEST PRODUCT
+          const latestProduct =
+
+            vendorProducts.sort((a, b) =>
+
+              new Date(
+                b.createdAt ||
+                b.shopifyCreatedAt
+              ) -
+
+              new Date(
+                a.createdAt ||
+                a.shopifyCreatedAt
+              )
+
+            )[0];
+
+          return {
+
+            title:
+              vendor,
+
+            type:
+              "vendor",
+
+            latestDate:
+
+              latestProduct
+                ?.createdAt ||
+
+              latestProduct
+                ?.shopifyCreatedAt ||
+
+              0,
+
+            score:
+
+              vendorProducts
+                .reduce(
+                  (acc, p) =>
+                    acc + (
+                      p.score || 0
+                    ),
+                  0
+                )
+
+          };
+
+        });
+
+
+    // =========================
+    // 🔥 SORT VENDORS
+    // =========================
+
+    vendorResults.sort((a, b) => {
+
+      // SCORE FIRST
+      if (
+        b.score !== a.score
+      ) {
+
+        return (
+          b.score - a.score
+        );
+      }
+
+      // THEN LATEST
+      return (
+
+        new Date(
+          b.latestDate
+        ) -
+
+        new Date(
+          a.latestDate
+        )
+
+      );
+
+    });
+
+    // =========================
     // 🔥 COLLECTIONS
     // =========================
     let collectionQuery = {
@@ -750,6 +918,116 @@ router.get("/search", async (req, res) => {
         .lean();
 
     // =========================
+    // 🔥 SMART COLLECTIONS
+    // =========================
+
+    collections =
+
+      collections.map(c => {
+
+        // RELATED PRODUCTS
+        const relatedProducts =
+
+          products.filter(p =>
+
+            (
+              p.collections || []
+            )
+
+              .toString()
+
+              .toLowerCase()
+
+              .includes(
+
+                (
+                  c.title || ""
+                )
+                  .toLowerCase()
+
+              )
+
+          );
+
+        // LATEST PRODUCT
+        const latestProduct =
+
+          relatedProducts.sort((a, b) =>
+
+            new Date(
+              b.createdAt ||
+              b.shopifyCreatedAt
+            ) -
+
+            new Date(
+              a.createdAt ||
+              a.shopifyCreatedAt
+            )
+
+          )[0];
+
+        return {
+
+          ...c,
+
+          latestDate:
+
+            latestProduct
+              ?.createdAt ||
+
+            latestProduct
+              ?.shopifyCreatedAt ||
+
+            0,
+
+          score:
+
+            relatedProducts
+              .reduce(
+                (acc, p) =>
+                  acc + (
+                    p.score || 0
+                  ),
+                0
+              )
+
+        };
+
+      });
+
+
+    // =========================
+    // 🔥 SORT COLLECTIONS
+    // =========================
+
+    collections.sort((a, b) => {
+
+      // SCORE FIRST
+      if (
+        b.score !== a.score
+      ) {
+
+        return (
+          b.score - a.score
+        );
+      }
+
+      // THEN LATEST
+      return (
+
+        new Date(
+          b.latestDate
+        ) -
+
+        new Date(
+          a.latestDate
+        )
+
+      );
+
+    });
+
+    // =========================
     // 🔥 FORMAT COLLECTIONS
     // =========================
     const formattedCollections =
@@ -795,7 +1073,7 @@ router.get("/search", async (req, res) => {
       },
 
       vendors:
-        matchedVendors,
+        vendorResults,
 
       collections:
         formattedCollections,
