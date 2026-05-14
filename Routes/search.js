@@ -449,14 +449,36 @@ router.get("/search", async (req, res) => {
         ).toLowerCase();
 
       const collections =
-        (
-          p.collections || ""
-        ).toLowerCase();
+
+        Array.isArray(
+          p.collections
+        )
+
+          ? p.collections
+            .join(" ")
+            .toLowerCase()
+
+          : (
+            p.collections || ""
+          )
+            .toString()
+            .toLowerCase();
 
       const tags =
-        (
-          p.tags || ""
-        ).toLowerCase();
+
+        Array.isArray(
+          p.tags
+        )
+
+          ? p.tags
+            .join(" ")
+            .toLowerCase()
+
+          : (
+            p.tags || ""
+          )
+            .toString()
+            .toLowerCase();
 
       // ======================
       // EXACT QUERY
