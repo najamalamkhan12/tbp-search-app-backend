@@ -182,7 +182,51 @@ router.get("/search", async (req, res) => {
     // =========================
     // 🔥 DETECT VENDOR
     // =========================
-    let detectedVendor = null;
+    // =========================
+// 🔥 DETECT PARTIAL VENDOR
+// =========================
+
+const detectedVendor =
+
+  uniqueVendors.find(v => {
+
+    const vendorName =
+      v.toLowerCase();
+
+    // FULL QUERY MATCH
+    if (
+      vendorName.includes(
+        normalizedQuery
+      )
+    ) {
+      return true;
+    }
+
+    // QUERY INSIDE VENDOR
+    if (
+      normalizedQuery.includes(
+        vendorName
+      )
+    ) {
+      return true;
+    }
+
+    // TOKEN MATCH
+    return normalizedQuery
+
+      .split(" ")
+
+      .some(token =>
+
+        token.length >= 1 &&
+
+        vendorName.includes(
+          token
+        )
+
+      );
+
+  });
 
     // LONGEST MATCH FIRST
     const sortedVendors =
