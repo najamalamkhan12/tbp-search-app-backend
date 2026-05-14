@@ -215,7 +215,7 @@ router.get("/search", async (req, res) => {
 
           .some(token =>
 
-            token.length >= 1 &&
+            token.length >= 2 &&
 
             vendorName.includes(
               token
@@ -302,13 +302,6 @@ router.get("/search", async (req, res) => {
 
       // ✅ REMAINING QUERY
       if (remainingQuery) {
-
-        const remainingTokens =
-          remainingQuery
-
-            .split(" ")
-
-            .filter(Boolean);
 
         searchConditions.push({
 
@@ -432,7 +425,7 @@ router.get("/search", async (req, res) => {
 
       })
 
-        .limit(80)
+        .limit(40)
 
         .lean()
         .select(`
@@ -933,16 +926,16 @@ router.get("/search", async (req, res) => {
                 c.title || ""
               ).toLowerCase();
 
-            return (
+            const collectionTokens =
+              collectionTitle
+                .split(" ")
+                .filter(Boolean);
 
-              productCollections.includes(
-                collectionTitle
-              ) ||
-
-              collectionTitle.includes(
-                productCollections
-              )
-
+            return collectionTokens.some(
+              token =>
+                productCollections.includes(
+                  token
+                )
             );
 
           });
