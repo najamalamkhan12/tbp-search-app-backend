@@ -180,69 +180,50 @@ router.get("/search", async (req, res) => {
         .trim();
 
     // =========================
-    // 🔥 DETECT VENDOR
+    // 🔥 DETECT PARTIAL VENDOR
     // =========================
-    // =========================
-// 🔥 DETECT PARTIAL VENDOR
-// =========================
 
-const detectedVendor =
+    let detectedVendor =
 
-  uniqueVendors.find(v => {
+      uniqueVendors.find(v => {
 
-    const vendorName =
-      v.toLowerCase();
+        const vendorName =
+          v.toLowerCase();
 
-    // FULL QUERY MATCH
-    if (
-      vendorName.includes(
-        normalizedQuery
-      )
-    ) {
-      return true;
-    }
+        // FULL QUERY MATCH
+        if (
+          vendorName.includes(
+            normalizedQuery
+          )
+        ) {
+          return true;
+        }
 
-    // QUERY INSIDE VENDOR
-    if (
-      normalizedQuery.includes(
-        vendorName
-      )
-    ) {
-      return true;
-    }
+        // QUERY INSIDE VENDOR
+        if (
+          normalizedQuery.includes(
+            vendorName
+          )
+        ) {
+          return true;
+        }
 
-    // TOKEN MATCH
-    return normalizedQuery
+        // TOKEN MATCH
+        return normalizedQuery
 
-      .split(" ")
+          .split(" ")
 
-      .some(token =>
+          .some(token =>
 
-        token.length >= 1 &&
+            token.length >= 1 &&
 
-        vendorName.includes(
-          token
-        )
+            vendorName.includes(
+              token
+            )
 
-      );
+          );
 
-  });
-
-    // LONGEST MATCH FIRST
-    const sortedVendors =
-      [...uniqueVendors].sort(
-        (a, b) =>
-          b.length - a.length
-      );
-
-    detectedVendor =
-      sortedVendors.find(v =>
-
-        normalizedQuery.startsWith(
-          v.toLowerCase()
-        )
-
-      );
+      });
 
     // =========================
     // 🔥 REMAINING QUERY
