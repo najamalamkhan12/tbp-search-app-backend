@@ -162,15 +162,8 @@ router.get("/search", async (req, res) => {
 
       // SAVE CACHE
       vendorCache[shop] = {
-
-        data:
-          uniqueVendors,
-
-        timestamp:
-          new Date(
-            node.createdAt || 0
-          ).getTime(),
-
+        data: uniqueVendors,
+        timestamp: Date.now(),
       };
     }
 
