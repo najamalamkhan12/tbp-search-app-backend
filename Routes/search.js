@@ -1754,69 +1754,6 @@ router.get("/trending", async (req, res) => {
       );
 
     // =========================
-    // ANALYTICS
-    // =========================
-
-    const analyticsData =
-
-      await Analytics.aggregate([
-
-        {
-          $match: {
-
-            store:
-              store.toLowerCase(),
-
-            productId: {
-              $exists: true,
-              $ne: null
-            }
-
-          }
-        },
-
-        {
-          $group: {
-
-            _id: "$productId",
-
-            clicks: {
-              $sum: {
-                $cond: [
-                  {
-                    $eq: [
-                      "$type",
-                      "click"
-                    ]
-                  },
-                  1,
-                  0
-                ]
-              }
-            },
-
-            searches: {
-              $sum: {
-                $cond: [
-                  {
-                    $eq: [
-                      "$type",
-                      "search"
-                    ]
-                  },
-                  1,
-                  0
-                ]
-              }
-            }
-
-          }
-
-        }
-
-      ]);
-
-    // =========================
     // ANALYTICS MAP
     // =========================
 
