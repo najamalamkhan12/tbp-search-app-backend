@@ -24,7 +24,4 @@ const featuredBrandSchema =
 
   });
 
-export default mongoose.model(
-  "FeaturedBrand",
-  featuredBrandSchema
-);
+module.exports = mongoose.model("FeaturedBrand",featuredBrandSchema);
