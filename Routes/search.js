@@ -1109,7 +1109,7 @@ router.get(
       // =========================
 
       const featuredBrands =
-        await FeaturedBrand.find({
+        await featuredBrands.find({
           active: true
         }).lean();
 
