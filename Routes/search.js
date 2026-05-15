@@ -1104,27 +1104,19 @@ router.get(
       const stores =
         await Store.find().lean();
 
-      // =========================
       // FEATURED BRANDS
-      // =========================
 
       const featuredBrands =
-        await featuredBrands.find({
+        await FeaturedBrand.find({
           active: true
         }).lean();
 
-      // =========================
       // FEATURED MAP
-      // =========================
-
       const featuredMap = {};
-
       featuredBrands.forEach(f => {
-
         featuredMap[
           f.title.toLowerCase()
         ] = f;
-
       });
 
       // =========================
@@ -1411,7 +1403,7 @@ router.get(
           const analyticsBrand =
 
             analyticsMap[
-              brand.title.toLowerCase()
+            brand.title.toLowerCase()
             ];
 
           if (analyticsBrand) {
@@ -1466,7 +1458,7 @@ router.get(
           const featured =
 
             featuredMap[
-              brand.title.toLowerCase()
+            brand.title.toLowerCase()
             ];
 
           if (featured) {
