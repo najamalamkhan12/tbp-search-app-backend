@@ -1483,7 +1483,7 @@ router.get("/trending-brands", async (req, res) => {
           b.timestamp -
           a.timestamp
         )
-        .slice(0, 20);
+        .slice(0, 80);
 
     // =========================
     // RESPONSE
