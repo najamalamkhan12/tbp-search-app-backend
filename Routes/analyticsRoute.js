@@ -5,6 +5,7 @@ const Click = require("../Models/clickModel");
 router.post("/analytics", async (req, res) => {
   try {
     const {
+      vendor,
       type,
       query,
       productId,
@@ -21,10 +22,25 @@ router.post("/analytics", async (req, res) => {
     await Analytics.create({
       type,
       query,
+      normalizedQuery:
+        (query || "")
+          .toLowerCase()
+          .trim(),
       productId,
-      productTitle: productTitle || null, // 🔥 MUST
-      productImage: productImage || null, // 🔥 MUST
-      store: store || null,
+      productTitle:
+        productTitle || null,
+      productHandle:
+        productHandle || null,
+      productImage:
+        productImage || null,
+      vendor:
+        vendor || null,
+      store,
+      device:
+        req.headers["user-agent"]
+          ?.includes("Mobile")
+          ? "mobile"
+          : "desktop",
     });
 
     res.json({ success: true });

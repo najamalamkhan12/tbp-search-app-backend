@@ -7,6 +7,7 @@ const Synonym = require("../Models/synonymModel");
 const Boost = require("../Models/boostModel");
 const Product = require("../Models/productModel")
 const Collection = require("../Models/collectionModel");
+const FeaturedBrand = require("../Models/featuredBrandModel");
 
 const SHOPIFY_URL = `${process.env.SHOPIFY_STORE_URL}/api/graphql.json`;
 
@@ -1090,70 +1091,476 @@ router.get("/search", async (req, res) => {
   }
 });
 
-router.get("/trending-brands", async (req, res) => {
-  try {
-    const stores = await Store.find();
+router.get(
+  "/trending-brands",
+  async (req, res) => {
 
-    const results = await Promise.all(
-      stores.map(async (store) => {
-        const response = await fetch(
-          `https://${store.domain}/admin/api/2024-01/graphql.json`,
+    try {
+
+      // =========================
+      // STORES
+      // =========================
+
+      const stores =
+        await Store.find().lean();
+
+      // =========================
+      // FEATURED BRANDS
+      // =========================
+
+      const featuredBrands =
+        await FeaturedBrand.find({
+          active: true
+        }).lean();
+
+      // =========================
+      // FEATURED MAP
+      // =========================
+
+      const featuredMap = {};
+
+      featuredBrands.forEach(f => {
+
+        featuredMap[
+          f.title.toLowerCase()
+        ] = f;
+
+      });
+
+      // =========================
+      // ANALYTICS DATA
+      // =========================
+
+      const analyticsData =
+
+        await Analytics.aggregate([
+
           {
-            method: "POST",
-            headers: {
-              "X-Shopify-Access-Token": store.accessToken,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              query: `
-              {
-                products(first: 10) {
-                  edges {
-                    node {
-                      vendor
-                      title
-                      handle
-                      images(first:1){
-                        edges{node{url}}
-                      }
-                      variants(first:1){
-                        edges{node{price}}
-                      }
-                    }
-                  }
+            $match: {
+              vendor: {
+                $exists: true,
+                $ne: null
+              }
+            }
+          },
+
+          {
+            $group: {
+
+              _id: "$vendor",
+
+              searches: {
+                $sum: {
+                  $cond: [
+                    {
+                      $eq: [
+                        "$type",
+                        "search"
+                      ]
+                    },
+                    1,
+                    0
+                  ]
+                }
+              },
+
+              clicks: {
+                $sum: {
+                  $cond: [
+                    {
+                      $eq: [
+                        "$type",
+                        "click"
+                      ]
+                    },
+                    1,
+                    0
+                  ]
                 }
               }
-              `,
-            }),
+
+            }
           }
+
+        ]);
+
+      // =========================
+      // ANALYTICS MAP
+      // =========================
+
+      const analyticsMap = {};
+
+      analyticsData.forEach(a => {
+
+        if (!a._id) return;
+
+        analyticsMap[
+          a._id.toLowerCase()
+        ] = a;
+
+      });
+
+      // =========================
+      // FETCH PRODUCTS
+      // =========================
+
+      const results =
+        await Promise.all(
+
+          stores.map(async store => {
+
+            try {
+
+              const response =
+                await fetch(
+
+                  `https://${store.domain}/admin/api/2024-01/graphql.json`,
+
+                  {
+                    method: "POST",
+
+                    headers: {
+                      "X-Shopify-Access-Token":
+                        store.accessToken,
+
+                      "Content-Type":
+                        "application/json",
+                    },
+
+                    body: JSON.stringify({
+
+                      query: `
+                      {
+                        products(
+                          first: 20,
+                          sortKey: CREATED_AT,
+                          reverse: true
+                        ) {
+
+                          edges {
+
+                            node {
+
+                              vendor
+                              title
+                              handle
+                              createdAt
+
+                              images(first:1){
+                                edges{
+                                  node{
+                                    url
+                                  }
+                                }
+                              }
+
+                              variants(first:1){
+                                edges{
+                                  node{
+                                    price
+                                  }
+                                }
+                              }
+
+                            }
+
+                          }
+
+                        }
+                      }
+                      `,
+
+                    }),
+                  }
+                );
+
+              const data =
+                await response.json();
+
+              return (
+
+                data?.data?.products?.edges?.map(p => ({
+
+                  title:
+                    p.node.title || "",
+
+                  handle:
+                    p.node.handle || "",
+
+                  vendor:
+                    p.node.vendor || "",
+
+                  createdAt:
+                    p.node.createdAt || null,
+
+                  image:
+                    p.node.images
+                      ?.edges?.[0]
+                      ?.node?.url || "",
+
+                  price:
+                    p.node.variants
+                      ?.edges?.[0]
+                      ?.node?.price || "0",
+
+                })) || []
+
+              );
+
+            } catch (err) {
+
+              console.error(
+                "STORE FETCH ERROR:",
+                store.domain,
+                err.message
+              );
+
+              return [];
+
+            }
+
+          })
+
         );
 
-        const data = await response.json();
+      // =========================
+      // PRODUCTS
+      // =========================
 
-        return data?.data?.products?.edges?.map(p => ({
-          title: p.node.title,
-          handle: p.node.handle,
-          vendor: p.node.vendor,
-          image: p.node.images?.edges?.[0]?.node?.url || "",
-          price: p.node.variants?.edges?.[0]?.node?.price || "0",
-        })) || [];
+      const products =
+        results.flat();
 
-      })
-    );
+      // =========================
+      // GROUP BRANDS
+      // =========================
 
-    const products = results.flat();
+      const brandMap = {};
 
-    const brands = [...new Set(products.map(p => p.vendor).filter(Boolean))];
+      products.forEach(product => {
 
-    res.json({
-      products,
-      brands
-    });
+        const vendor =
+          product.vendor?.trim();
 
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+        if (!vendor) return;
+
+        if (!brandMap[vendor]) {
+
+          brandMap[vendor] = {
+
+            title:
+              vendor,
+
+            products: [],
+
+            latestDate:
+              product.createdAt,
+
+            score: 0
+
+          };
+
+        }
+
+        brandMap[vendor]
+          .products
+          .push(product);
+
+      });
+
+      // =========================
+      // CALCULATE SCORES
+      // =========================
+
+      Object.values(brandMap)
+        .forEach(brand => {
+
+          const latestProduct =
+
+            [...brand.products]
+
+              .sort((a, b) =>
+
+                new Date(
+                  b.createdAt || 0
+                ) -
+
+                new Date(
+                  a.createdAt || 0
+                )
+
+              )[0];
+
+          // =========================
+          // LATEST DATE
+          // =========================
+
+          brand.latestDate =
+            latestProduct?.createdAt || null;
+
+          // =========================
+          // BASE SCORE
+          // =========================
+
+          brand.score +=
+            brand.products.length * 100;
+
+          // =========================
+          // ANALYTICS BOOST
+          // =========================
+
+          const analyticsBrand =
+
+            analyticsMap[
+              brand.title.toLowerCase()
+            ];
+
+          if (analyticsBrand) {
+
+            // SEARCH BOOST
+            brand.score +=
+              analyticsBrand.searches * 500;
+
+            // CLICK BOOST
+            brand.score +=
+              analyticsBrand.clicks * 1000;
+
+          }
+
+          // =========================
+          // RECENCY BOOST
+          // =========================
+
+          if (latestProduct?.createdAt) {
+
+            const daysOld =
+
+              (
+                Date.now() -
+
+                new Date(
+                  latestProduct.createdAt
+                )
+
+              ) /
+
+              (1000 * 60 * 60 * 24);
+
+            if (daysOld <= 7) {
+
+              brand.score += 5000;
+
+            } else if (
+              daysOld <= 30
+            ) {
+
+              brand.score += 3000;
+
+            }
+
+          }
+
+          // =========================
+          // FEATURED BOOST
+          // =========================
+
+          const featured =
+
+            featuredMap[
+              brand.title.toLowerCase()
+            ];
+
+          if (featured) {
+
+            brand.score +=
+              100000 +
+              (featured.priority || 0);
+
+          }
+
+        });
+
+      // =========================
+      // FINAL BRANDS
+      // =========================
+
+      const brands =
+
+        Object.values(brandMap)
+
+          .sort((a, b) =>
+
+            b.score - a.score
+
+          )
+
+          .slice(0, 10)
+
+          .map(b => ({
+
+            title:
+              b.title,
+
+            score:
+              b.score,
+
+            latestDate:
+              b.latestDate,
+
+            totalProducts:
+              b.products.length
+
+          }));
+
+      // =========================
+      // TRENDING PRODUCTS
+      // =========================
+
+      const trendingProducts =
+
+        [...products]
+
+          .sort((a, b) =>
+
+            new Date(
+              b.createdAt || 0
+            ) -
+
+            new Date(
+              a.createdAt || 0
+            )
+
+          )
+
+          .slice(0, 20);
+
+      // =========================
+      // RESPONSE
+      // =========================
+
+      res.json({
+
+        brands,
+
+        products:
+          trendingProducts
+
+      });
+
+    } catch (err) {
+
+      console.error(
+        "TRENDING BRANDS ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error: err.message
+      });
+
+    }
+
   }
-});
+);
 
 router.get("/trending", async (req, res) => {
   try {
