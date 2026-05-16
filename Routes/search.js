@@ -52,7 +52,7 @@ router.get("/search", async (req, res) => {
       .replace(/\/$/, "")
       .trim()
       .toLowerCase();
-
+    const cleanStore = shop;
     q = (q || "").trim();
 
     const originalQuery =
@@ -86,21 +86,10 @@ router.get("/search", async (req, res) => {
       synonymData &&
       synonymData.synonyms?.length > 0
     ) {
-
-      console.log(
-        "Original Query:",
-        originalQuery
-      );
-
       finalQuery =
         synonymData.synonyms[0]
           .toLowerCase()
           .trim();
-
-      console.log(
-        "Synonym Applied:",
-        finalQuery
-      );
     }
 
     // =========================
@@ -398,7 +387,7 @@ router.get("/search", async (req, res) => {
     let products =
       await Product.find({
 
-        store: shop,
+        store: cleanStore,
 
         status: "ACTIVE",
 
@@ -1052,15 +1041,8 @@ router.get("/search", async (req, res) => {
     });
   } catch (err) {
 
-    console.log(
-      "SERVER ERROR:",
-      err
-    );
-
     res.status(500).json({
-
       error: err.message
-
     });
   }
 });
@@ -1086,9 +1068,19 @@ router.get("/trending-brands", async (req, res) => {
 
     }
 
+    const cleanStore =
+      store
+        .replace(/^https?:\/\//, "")
+        .replace(/\/$/, "")
+        .trim()
+        .toLowerCase();
+
     const stores =
       await Store.find({
-        domain: store
+        domain: new RegExp(
+          `^${cleanStore}$`,
+          "i"
+        )
       }).lean();
 
     // FEATURED BRANDS
@@ -1113,15 +1105,15 @@ router.get("/trending-brands", async (req, res) => {
 
     const analyticsMap = {};
 
-    // analyticsData.forEach(a => {
+    analyticsData.forEach(a => {
 
-    //   if (!a._id) return;
+      if (!a._id) return;
 
-    //   analyticsMap[
-    //     a._id.toLowerCase()
-    //   ] = a;
+      analyticsMap[
+        a._id.toLowerCase()
+      ] = a;
 
-    // });
+    });
 
     // =========================
     // FETCH PRODUCTS
@@ -1155,7 +1147,7 @@ router.get("/trending-brands", async (req, res) => {
                     query: `
 {
   products(
-    first: 20,
+    first: 120,
     sortKey: CREATED_AT,
     reverse: true,
     query: "status:active"
@@ -1257,7 +1249,7 @@ router.get("/trending-brands", async (req, res) => {
     // PRODUCTS
     // =========================
 
-    const products =
+    let products =
       results
         .flat()
         .filter(p =>
@@ -1466,10 +1458,17 @@ router.get("/trending", async (req, res) => {
     // STORES
     // =========================
 
+    const cleanStore =
+      store
+        .replace(/^https?:\/\//, "")
+        .replace(/\/$/, "")
+        .trim()
+        .toLowerCase();
+
     const stores =
       await Store.find({
         domain: new RegExp(
-          `^${store}$`,
+          `^${cleanStore}$`,
           "i"
         )
       }).lean();
@@ -1712,7 +1711,7 @@ router.get("/trending", async (req, res) => {
     // PRODUCTS
     // =========================
 
-    const products = results
+    let products = results
       .flat()
       .filter(p =>
         p.status === "ACTIVE" &&
@@ -1734,7 +1733,7 @@ router.get("/trending", async (req, res) => {
 
         const analytics =
           analyticsMap[
-            product.id
+          product.id
           ];
 
         if (analytics) {
