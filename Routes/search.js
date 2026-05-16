@@ -1117,8 +1117,7 @@ router.get("/trending-brands", async (req, res) => {
     const featuredBrands =
       await FeaturedBrand.find({
         active: true,
-        store:
-          store.toLowerCase()
+        store: store.toLowerCase()
       }).lean();
 
     // FEATURED MAP
@@ -1135,15 +1134,15 @@ router.get("/trending-brands", async (req, res) => {
 
     const analyticsMap = {};
 
-    analyticsData.forEach(a => {
+    // analyticsData.forEach(a => {
 
-      if (!a._id) return;
+    //   if (!a._id) return;
 
-      analyticsMap[
-        a._id.toLowerCase()
-      ] = a;
+    //   analyticsMap[
+    //     a._id.toLowerCase()
+    //   ] = a;
 
-    });
+    // });
 
     // =========================
     // FETCH PRODUCTS
@@ -1175,45 +1174,48 @@ router.get("/trending-brands", async (req, res) => {
                   body: JSON.stringify({
 
                     query: `
-                      {
-                        products(
-                          first: 20,
-                          sortKey: CREATED_AT,
-                          reverse: true
-                        ) {
+{
+  products(
+    first: 20,
+    sortKey: CREATED_AT,
+    reverse: true,
+    query: "status:active"
+  ) {
 
-                          edges {
+    edges {
 
-                            node {
+      node {
 
-                              vendor
-                              title
-                              handle
-                              createdAt
+        vendor
+        title
+        handle
+        createdAt
+        publishedAt
+        status
 
-                              images(first:1){
-                                edges{
-                                  node{
-                                    url
-                                  }
-                                }
-                              }
+        images(first:1){
+          edges{
+            node{
+              url
+            }
+          }
+        }
 
-                              variants(first:1){
-                                edges{
-                                  node{
-                                    price
-                                  }
-                                }
-                              }
+        variants(first:1){
+          edges{
+            node{
+              price
+            }
+          }
+        }
 
-                            }
+      }
 
-                          }
+    }
 
-                        }
-                      }
-                      `,
+  }
+}
+`,
 
                   }),
                 }
@@ -1228,15 +1230,16 @@ router.get("/trending-brands", async (req, res) => {
 
                 title:
                   p.node.title || "",
-
                 handle:
                   p.node.handle || "",
-
                 vendor:
                   p.node.vendor || "",
-
                 createdAt:
                   p.node.createdAt || null,
+                publishedAt:
+                  p.node.publishedAt || null,
+                status:
+                  p.node.status || "",
                 timestamp:
                   new Date(
                     p.node.createdAt || 0
@@ -1276,7 +1279,12 @@ router.get("/trending-brands", async (req, res) => {
     // =========================
 
     const products =
-      results.flat();
+      results
+        .flat()
+        .filter(p =>
+          p.status === "ACTIVE" &&
+          p.publishedAt
+        );
 
     // =========================
     // GROUP BRANDS
