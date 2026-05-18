@@ -1580,13 +1580,11 @@ router.get("/trending", async (req, res) => {
                   {
                     products(
   first: 60,
-  sortKey: UPDATED_AT,
+  sortKey: CREATED_AT,
   reverse: true,
   query: "status:ACTIVE"
 ) {
-
                       edges {
-
                         node {
   id
   title
@@ -1594,7 +1592,6 @@ router.get("/trending", async (req, res) => {
   createdAt
   publishedAt
   status
-
   images(first: 1) {
     edges {
       node {
