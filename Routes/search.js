@@ -1076,12 +1076,21 @@ router.get("/trending-brands", async (req, res) => {
         .toLowerCase();
 
     const stores =
-      await Store.find({
-        domain: new RegExp(
-          `^${cleanStore}$`,
-          "i"
-        )
-      }).lean();
+      await Store.find().lean();
+
+    const matchedStores =
+      stores.filter(s => {
+
+        const dbDomain =
+          s.domain
+            ?.replace(/^https?:\/\//, "")
+            .replace(/\/$/, "")
+            .trim()
+            .toLowerCase();
+
+        return dbDomain === cleanStore;
+
+      });
 
     // FEATURED BRANDS
 
@@ -1180,7 +1189,7 @@ router.get("/trending-brands", async (req, res) => {
     const results =
       await Promise.all(
 
-        stores.map(async store => {
+        matchedStores.map(async store => {
 
           try {
 
@@ -1205,10 +1214,10 @@ router.get("/trending-brands", async (req, res) => {
                     query: `
 {
   products(
-  first: 50,
-  sortKey: UPDATED_AT,
+  first: 20,
+  sortKey: CREATED_AT,
   reverse: true,
-  query: "status:ACTIVE"
+  query: "status:active"
 ) {
     edges {
       node {
@@ -1579,12 +1588,14 @@ router.get("/trending", async (req, res) => {
                   query: `
                   {
                     products(
-  first: 60,
+  first: 20,
   sortKey: CREATED_AT,
   reverse: true,
-  query: "status:ACTIVE"
+  query: "status:active"
 ) {
+
                       edges {
+
                         node {
   id
   title
@@ -1592,6 +1603,7 @@ router.get("/trending", async (req, res) => {
   createdAt
   publishedAt
   status
+
   images(first: 1) {
     edges {
       node {
@@ -1623,9 +1635,31 @@ router.get("/trending", async (req, res) => {
 
           const data =
             await response.json();
-          return (
 
-            data?.data?.products?.edges?.map(item => {
+          console.log(
+            "TRENDING STORE:",
+            store.domain
+          );
+
+          console.log(
+            "GRAPHQL RESPONSE:",
+            JSON.stringify(data, null, 2)
+          );
+          if (
+            !data?.data?.products?.edges
+          ) {
+
+            console.log(
+              "NO PRODUCTS FOUND:",
+              data
+            );
+
+            return [];
+
+          }
+
+          return (
+            data.data.products.edges.map(p => ({
 
               const node =
                 item.node;
@@ -1667,7 +1701,7 @@ router.get("/trending", async (req, res) => {
 
             }) || []
 
-          );
+            );
 
         } catch (err) {
 
