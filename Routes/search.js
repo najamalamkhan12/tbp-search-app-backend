@@ -1205,11 +1205,11 @@ router.get("/trending-brands", async (req, res) => {
                     query: `
 {
   products(
-    first: 60,
-    sortKey: UPDATED_AT,
-    reverse: true,
-    query: "status:active AND published_status:published"
-  ) {
+  first: 50,
+  sortKey: UPDATED_AT,
+  reverse: true,
+  query: "status:ACTIVE"
+) {
     edges {
       node {
         vendor
@@ -1579,10 +1579,10 @@ router.get("/trending", async (req, res) => {
                   query: `
                   {
                     products(
-  first: 50,
-  sortKey: CREATED_AT,
+  first: 60,
+  sortKey: UPDATED_AT,
   reverse: true,
-  query: "status:active AND published_status:published"
+  query: "status:ACTIVE"
 ) {
 
                       edges {
