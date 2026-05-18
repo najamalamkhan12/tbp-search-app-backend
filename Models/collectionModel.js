@@ -36,6 +36,11 @@ const collectionSchema =
             default: 0,
             index: true
         },
+        vendor: {
+            type: String,
+            default: "",
+            index: true
+        },
         shopifyCreatedAt: {
             type: Date,
             index: true
@@ -75,6 +80,11 @@ collectionSchema.index({
     createdAt: -1
 });
 
+collectionSchema.index({
+    store: 1,
+    updatedAt: -1
+});
+
 // =====================================
 // FAST TITLE SEARCH
 // =====================================
@@ -89,6 +99,11 @@ collectionSchema.index({
 collectionSchema.index({
     store: 1,
     handle: 1
+});
+
+collectionSchema.index({
+    store: 1,
+    vendor: 1
 });
 
 // =====================================

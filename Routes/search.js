@@ -799,9 +799,7 @@ router.get("/search", async (req, res) => {
     // 🔥 COLLECTIONS
     // =========================
     let collectionQuery = {
-
-      store: shop
-
+      store: cleanStore
     };
 
     // =========================
@@ -813,15 +811,31 @@ router.get("/search", async (req, res) => {
       collectionQuery.$or = [
 
         {
-          vendor: {
+          title: {
             $regex:
-              detectedVendor,
+              normalizedQuery,
             $options: "i"
           }
         },
 
         {
-          title: {
+          handle: {
+            $regex:
+              normalizedQuery,
+            $options: "i"
+          }
+        },
+
+        {
+          searchableText: {
+            $regex:
+              normalizedQuery,
+            $options: "i"
+          }
+        },
+
+        {
+          vendor: {
             $regex:
               detectedVendor,
             $options: "i"
@@ -848,6 +862,13 @@ router.get("/search", async (req, res) => {
               normalizedQuery,
             $options: "i"
           }
+        },
+        {
+          searchableText: {
+            $regex:
+              normalizedQuery,
+            $options: "i"
+          }
         }
 
       ];
@@ -860,11 +881,11 @@ router.get("/search", async (req, res) => {
       )
 
         .sort({
-          score: -1,
+          updatedAt: -1,
           createdAt: -1
         })
 
-        .limit(10)
+        .limit(20)
 
         .lean();
 
@@ -937,13 +958,10 @@ router.get("/search", async (req, res) => {
           ...c,
 
           latestDate:
-
-            latestProduct
-              ?.createdAt ||
-
-            latestProduct
-              ?.shopifyCreatedAt ||
-
+            latestProduct?.createdAt ||
+            latestProduct?.shopifyCreatedAt ||
+            c.updatedAt ||
+            c.createdAt ||
             0,
 
           score:
@@ -997,24 +1015,30 @@ router.get("/search", async (req, res) => {
     // 🔥 FORMAT COLLECTIONS
     // =========================
     const formattedCollections =
+      collections
+        .filter(c => c.title && c.handle)
+        .slice(0, 5)
+        .map(c => ({
 
-      collections.map(c => ({
+          title:
+            c.title || "",
 
-        title:
-          c.title || "",
+          handle:
+            c.handle || "",
 
-        handle:
-          c.handle || "",
+          image:
+            c.image || "",
 
-        image:
-          c.image || "",
+          type:
+            "collection",
 
-        type:
-          "collection",
+          score:
+            c.score || 0,
 
-        score: 80
+          latestDate:
+            c.latestDate || null
 
-      }));
+        }));
 
     // =========================
     // 🔥 FINAL RESPONSE
@@ -1452,7 +1476,7 @@ router.get("/trending-brands", async (req, res) => {
         const analyticsBrand =
 
           analyticsMap[
-            brand.title?.toLowerCase()
+          brand.title?.toLowerCase()
           ];
 
         if (analyticsBrand) {
@@ -1519,7 +1543,7 @@ router.get("/trending-brands", async (req, res) => {
         const featured =
 
           featuredMap[
-            brand.title?.toLowerCase()
+          brand.title?.toLowerCase()
           ];
 
         if (featured) {
@@ -1967,7 +1991,7 @@ router.get("/trending", async (req, res) => {
 
         const analytics =
           analyticsMap[
-            product.id
+          product.id
           ];
 
         if (analytics) {
