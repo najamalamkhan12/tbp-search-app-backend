@@ -1088,16 +1088,74 @@ router.get("/trending-brands", async (req, res) => {
     const featuredBrands =
       await FeaturedBrand.find({
         active: true,
-        store: store.toLowerCase()
+        store: cleanStore
       }).lean();
 
     // FEATURED MAP
     const featuredMap = {};
     featuredBrands.forEach(f => {
       featuredMap[
-        f.title.toLowerCase()
+        f.title?.toLowerCase()
       ] = f;
     });
+
+    // =========================
+    // ANALYTICS DATA
+    // =========================
+
+    const analyticsData =
+
+      await Analytics.aggregate([
+
+        {
+          $match: {
+            store: cleanStore,
+            vendor: {
+              $exists: true,
+              $ne: null
+            }
+          }
+        },
+
+        {
+          $group: {
+
+            _id: "$vendor",
+
+            searches: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$type",
+                      "search"
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            },
+
+            clicks: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$type",
+                      "click"
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            }
+
+          }
+        }
+
+      ]);
 
     // =========================
     // ANALYTICS MAP
@@ -1147,23 +1205,20 @@ router.get("/trending-brands", async (req, res) => {
                     query: `
 {
   products(
-    first: 120,
-    sortKey: CREATED_AT,
+    first: 60,
+    sortKey: UPDATED_AT,
     reverse: true,
-    query: "status:active"
+    query: "status:active AND published_status:published"
   ) {
-
     edges {
-
       node {
-
         vendor
         title
         handle
         createdAt
+        updatedAt
         publishedAt
         status
-
         images(first:1){
           edges{
             node{
@@ -1171,7 +1226,6 @@ router.get("/trending-brands", async (req, res) => {
             }
           }
         }
-
         variants(first:1){
           edges{
             node{
@@ -1211,9 +1265,13 @@ router.get("/trending-brands", async (req, res) => {
                   p.node.publishedAt || null,
                 status:
                   p.node.status || "",
+                updatedAt:
+                  p.node.updatedAt || null,
                 timestamp:
                   new Date(
-                    p.node.createdAt || 0
+                    p.node.updatedAt ||
+                    p.node.createdAt ||
+                    0
                   ).getTime(),
                 image:
                   p.node.images
@@ -1311,13 +1369,18 @@ router.get("/trending-brands", async (req, res) => {
         // LATEST DATE
         // =========================
         brand.latestDate =
-          latestProduct?.createdAt || null;
+          latestProduct?.updatedAt ||
+          latestProduct?.createdAt ||
+          null;
 
         // =========================
         // BASE SCORE
         // =========================
         brand.score +=
-          brand.products.length * 100;
+          Math.min(
+            brand.products.length * 100,
+            3000
+          );
 
         // =========================
         // ANALYTICS BOOST
@@ -1329,40 +1392,50 @@ router.get("/trending-brands", async (req, res) => {
         if (analyticsBrand) {
           // SEARCH BOOST
           brand.score +=
-            analyticsBrand.searches * 500;
-          // CLICK BOOST
+            analyticsBrand.searches * 120;
+
           brand.score +=
-            analyticsBrand.clicks * 1000;
+            analyticsBrand.clicks * 250;
         }
 
         // =========================
         // RECENCY BOOST
         // =========================
-        if (latestProduct?.createdAt) {
+
+        if (
+          latestProduct?.updatedAt ||
+          latestProduct?.createdAt
+        ) {
 
           const daysOld =
+
             (
               Date.now() -
               new Date(
+                latestProduct.updatedAt ||
                 latestProduct.createdAt
               )
             ) / (1000 * 60 * 60 * 24);
 
-          if (daysOld <= 7) {
-
-            brand.score += 100000;
-
-          } else if (
-            daysOld <= 30
-          ) {
-
-            brand.score += 50000;
-
-          } else if (
-            daysOld <= 90
-          ) {
+          if (daysOld <= 1) {
 
             brand.score += 20000;
+
+          } else if (daysOld <= 3) {
+
+            brand.score += 15000;
+
+          } else if (daysOld <= 7) {
+
+            brand.score += 10000;
+
+          } else if (daysOld <= 30) {
+
+            brand.score += 5000;
+
+          } else if (daysOld <= 90) {
+
+            brand.score += 1000;
 
           }
 
@@ -1373,11 +1446,11 @@ router.get("/trending-brands", async (req, res) => {
         // =========================
         const featured =
           featuredMap[
-          brand.title.toLowerCase()
+          brand.title?.toLowerCase()
           ];
         if (featured) {
           brand.score +=
-            100000 +
+            30000 +
             (featured.priority || 0);
         }
       });
@@ -1430,8 +1503,7 @@ router.get("/trending-brands", async (req, res) => {
       error: err.message
     });
   }
-}
-);
+});
 
 router.get("/trending", async (req, res) => {
 
@@ -1441,29 +1513,24 @@ router.get("/trending", async (req, res) => {
     // STORE
     // =========================
 
-    const { store } =
-      req.query;
-
+    const { store } = req.query;
     if (!store) {
-
       return res.status(400)
         .json({
           error:
             "Store is required"
         });
-
     }
 
     // =========================
     // STORES
     // =========================
 
-    const cleanStore =
-      store
-        .replace(/^https?:\/\//, "")
-        .replace(/\/$/, "")
-        .trim()
-        .toLowerCase();
+    const cleanStore = store
+      .replace(/^https?:\/\//, "")
+      .replace(/\/$/, "")
+      .trim()
+      .toLowerCase();
 
     const stores =
       await Store.find({
@@ -1515,7 +1582,7 @@ router.get("/trending", async (req, res) => {
   first: 50,
   sortKey: CREATED_AT,
   reverse: true,
-  query: "status:active"
+  query: "status:active AND published_status:published"
 ) {
 
                       edges {
