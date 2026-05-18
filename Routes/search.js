@@ -1092,6 +1092,16 @@ router.get("/trending-brands", async (req, res) => {
 
       });
 
+    if (!matchedStores.length) {
+
+      return res.json({
+        error: "No matching store found",
+        cleanStore,
+        dbStores: stores.map(s => s.domain)
+      });
+
+    }
+
     // FEATURED BRANDS
 
     const featuredBrands =
@@ -1214,13 +1224,16 @@ router.get("/trending-brands", async (req, res) => {
                     query: `
 {
   products(
-  first: 20,
-  sortKey: CREATED_AT,
-  reverse: true,
-  query: "status:active"
-) {
+    first: 50,
+    sortKey: UPDATED_AT,
+    reverse: true,
+    query: "status:active"
+  ) {
+
     edges {
+
       node {
+
         vendor
         title
         handle
@@ -1228,6 +1241,7 @@ router.get("/trending-brands", async (req, res) => {
         updatedAt
         publishedAt
         status
+
         images(first:1){
           edges{
             node{
@@ -1235,6 +1249,7 @@ router.get("/trending-brands", async (req, res) => {
             }
           }
         }
+
         variants(first:1){
           edges{
             node{
@@ -1249,7 +1264,7 @@ router.get("/trending-brands", async (req, res) => {
 
   }
 }
-`,
+                `,
 
                   }),
                 }
@@ -1264,24 +1279,32 @@ router.get("/trending-brands", async (req, res) => {
 
                 title:
                   p.node.title || "",
+
                 handle:
                   p.node.handle || "",
+
                 vendor:
                   p.node.vendor || "",
+
                 createdAt:
                   p.node.createdAt || null,
+
                 publishedAt:
                   p.node.publishedAt || null,
+
                 status:
                   p.node.status || "",
+
                 updatedAt:
                   p.node.updatedAt || null,
+
                 timestamp:
                   new Date(
                     p.node.updatedAt ||
                     p.node.createdAt ||
                     0
                   ).getTime(),
+
                 image:
                   p.node.images
                     ?.edges?.[0]
@@ -1555,7 +1578,7 @@ router.get("/trending", async (req, res) => {
 
     const promises =
 
-      stores.map(async store => {
+      matchedStores.map(async store => {
 
         try {
 
@@ -1588,8 +1611,8 @@ router.get("/trending", async (req, res) => {
                   query: `
                   {
                     products(
-  first: 20,
-  sortKey: CREATED_AT,
+  first: 60,
+  sortKey: UPDATED_AT,
   reverse: true,
   query: "status:active"
 ) {
@@ -1635,31 +1658,9 @@ router.get("/trending", async (req, res) => {
 
           const data =
             await response.json();
-
-          console.log(
-            "TRENDING STORE:",
-            store.domain
-          );
-
-          console.log(
-            "GRAPHQL RESPONSE:",
-            JSON.stringify(data, null, 2)
-          );
-          if (
-            !data?.data?.products?.edges
-          ) {
-
-            console.log(
-              "NO PRODUCTS FOUND:",
-              data
-            );
-
-            return [];
-
-          }
-
           return (
-            data.data.products.edges.map(p => ({
+
+            data?.data?.products?.edges?.map(item => {
 
               const node =
                 item.node;
@@ -1701,7 +1702,7 @@ router.get("/trending", async (req, res) => {
 
             }) || []
 
-            );
+          );
 
         } catch (err) {
 
