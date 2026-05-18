@@ -158,50 +158,77 @@ router.get("/search", async (req, res) => {
         .trim();
 
     // =========================
-    // 🔥 DETECT PARTIAL VENDOR
+    // 🔥 DETECT BEST VENDOR
     // =========================
 
-    let detectedVendor =
+    let detectedVendor = null;
 
-      uniqueVendors.find(v => {
+    const vendorMatches = uniqueVendors
+      .map(v => {
 
         const vendorName =
           v.toLowerCase();
 
-        // FULL QUERY MATCH
+        let score = 0;
+
+        // EXACT MATCH
+        if (
+          vendorName === normalizedQuery
+        ) {
+          score += 100000;
+        }
+
+        // STARTS WITH
+        if (
+          vendorName.startsWith(
+            normalizedQuery
+          )
+        ) {
+          score += 50000;
+        }
+
+        // CONTAINS
         if (
           vendorName.includes(
             normalizedQuery
           )
         ) {
-          return true;
+          score += 20000;
         }
 
-        // QUERY INSIDE VENDOR
-        if (
-          normalizedQuery.includes(
-            vendorName
-          )
-        ) {
-          return true;
-        }
-
-        // TOKEN MATCH
-        return normalizedQuery
-
+        // TOKEN MATCHES
+        normalizedQuery
           .split(" ")
+          .forEach(token => {
 
-          .some(token =>
+            if (
+              token.length >= 2 &&
+              vendorName.includes(token)
+            ) {
+              score += 5000;
+            }
 
-            token.length >= 2 &&
+          });
 
-            vendorName.includes(
-              token
-            )
+        return {
+          vendor: v,
+          score
+        };
 
-          );
+      })
 
-      });
+      .filter(v => v.score > 0)
+
+      .sort((a, b) =>
+        b.score - a.score
+      );
+
+    if (
+      vendorMatches.length
+    ) {
+      detectedVendor =
+        vendorMatches[0].vendor;
+    }
 
     // =========================
     // 🔥 REMAINING QUERY
@@ -625,10 +652,8 @@ router.get("/search", async (req, res) => {
 
             detectedVendor &&
 
-            vendorName.includes(
-              detectedVendor
-                .toLowerCase()
-            )
+            vendorName ===
+            detectedVendor.toLowerCase()
 
           ) {
             return true;
