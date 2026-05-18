@@ -503,7 +503,7 @@ router.get("/search", async (req, res) => {
 
       ) {
 
-        score += 80000;
+        score += 25000;
 
       }
 
@@ -522,7 +522,7 @@ router.get("/search", async (req, res) => {
 
       ) {
 
-        score += 30000;
+        score += 12000;
 
       }
 
@@ -569,10 +569,18 @@ router.get("/search", async (req, res) => {
       // ======================
 
       const created =
-        new Date(
-          p.shopifyCreatedAt ||
-          p.createdAt
-        );
+        p.shopifyCreatedAt
+          ? new Date(p.shopifyCreatedAt)
+          : null;
+
+      const daysOld =
+        created
+          ? (
+            Date.now() -
+            created.getTime()
+          ) /
+          (1000 * 60 * 60 * 24)
+          : 9999;
 
       const daysOld =
         (
@@ -583,12 +591,22 @@ router.get("/search", async (req, res) => {
 
       // 2026 / NEWEST PRODUCTS
       // VERY NEW
-      if (daysOld <= 7) {
-        score += 30000;
+      if (daysOld <= 3) {
+
+        score += 120000;
+
+      } else if (daysOld <= 7) {
+
+        score += 80000;
+
       } else if (daysOld <= 30) {
-        score += 15000;
+
+        score += 30000;
+
       } else if (daysOld <= 90) {
-        score += 5000;
+
+        score += 10000;
+
       }
 
       return {
@@ -667,13 +685,10 @@ router.get("/search", async (req, res) => {
             [...vendorProducts].sort((a, b) =>
 
               new Date(
-                b.createdAt ||
-                b.shopifyCreatedAt
+                b.shopifyCreatedAt || 0
               ) -
-
               new Date(
-                a.createdAt ||
-                a.shopifyCreatedAt
+                a.shopifyCreatedAt || 0
               )
 
             )[0];
@@ -881,8 +896,7 @@ router.get("/search", async (req, res) => {
           [...relatedProducts].sort((a, b) =>
 
             new Date(
-              b.createdAt ||
-              b.shopifyCreatedAt
+              b.shopifyCreatedAt || 0
             ) -
 
             new Date(
@@ -1051,15 +1065,11 @@ router.get("/search", async (req, res) => {
             return (
 
               new Date(
-                b.shopifyCreatedAt ||
-                b.createdAt ||
-                0
+                b.shopifyCreatedAt || 0
               ) -
 
               new Date(
-                a.shopifyCreatedAt ||
-                a.createdAt ||
-                0
+                a.shopifyCreatedAt || 0
               )
 
             );
@@ -1812,8 +1822,10 @@ router.get("/trending", async (req, res) => {
                   vendor:
                     node.vendor || "",
 
-                  createdAt:
-                    node.createdAt || null,
+                  createdAt: node.createdAt || null,
+                  timestamp: new Date(
+                    node.createdAt || 0
+                  ).getTime(),
 
                   updatedAt:
                     node.updatedAt || null,
@@ -1955,6 +1967,10 @@ router.get("/trending", async (req, res) => {
           );
 
         });
+
+    products.sort(
+      (a, b) => b.timestamp - a.timestamp
+    );
 
     // =========================
     // REMOVE DUPLICATES
