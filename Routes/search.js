@@ -409,6 +409,7 @@ router.get("/search", async (req, res) => {
   collections
   searchableText
   tags
+  status
 `)
 
     // =========================
@@ -569,8 +570,8 @@ router.get("/search", async (req, res) => {
 
       const created =
         new Date(
-          p.createdAt ||
-          p.shopifyCreatedAt
+          p.shopifyCreatedAt ||
+          p.createdAt
         );
 
       const daysOld =
@@ -583,70 +584,17 @@ router.get("/search", async (req, res) => {
       // 2026 / NEWEST PRODUCTS
       // VERY NEW
       if (daysOld <= 7) {
-
-        score += 2000000;
-
-      } else if (
-        daysOld <= 30
-      ) {
-
-        score += 1200000;
-
-      } else if (
-        daysOld <= 90
-      ) {
-
-        score += 500000;
-
-      } else if (
-        daysOld <= 180
-      ) {
-
-        score += 100000;
-
-      } else {
-
-        score -= 50000;
-
+        score += 30000;
+      } else if (daysOld <= 30) {
+        score += 15000;
+      } else if (daysOld <= 90) {
+        score += 5000;
       }
 
       return {
         ...p,
         score
       };
-
-    });
-
-    // =========================
-    // 🔥 SORT PRODUCTS
-    // =========================
-
-    products.sort((a, b) => {
-
-      // SCORE FIRST
-      if (
-        b.score !== a.score
-      ) {
-
-        return (
-          b.score - a.score
-        );
-      }
-
-      // THEN LATEST
-      return (
-
-        new Date(
-          b.createdAt ||
-          b.shopifyCreatedAt
-        ) -
-
-        new Date(
-          a.createdAt ||
-          a.shopifyCreatedAt
-        )
-
-      );
 
     });
 
@@ -833,15 +781,6 @@ router.get("/search", async (req, res) => {
             $options: "i"
           }
         },
-
-        {
-          vendor: {
-            $regex:
-              detectedVendor,
-            $options: "i"
-          }
-        }
-
       ];
 
     } else {
@@ -881,7 +820,7 @@ router.get("/search", async (req, res) => {
       )
 
         .sort({
-          updatedAt: -1,
+          shopifyCreatedAt: -1,
           createdAt: -1
         })
 
@@ -953,28 +892,64 @@ router.get("/search", async (req, res) => {
 
           )[0];
 
+        let collectionScore =
+
+          relatedProducts.reduce(
+            (acc, p) =>
+              acc + (p.score || 0),
+            0
+          );
+
+        // ======================
+        // NEW COLLECTION BOOST
+        // ======================
+
+        const collectionDate =
+
+          new Date(
+            c.shopifyCreatedAt ||
+            c.createdAt ||
+            0
+          );
+
+        const collectionDaysOld =
+
+          (
+            Date.now() -
+            collectionDate.getTime()
+          ) /
+
+          (1000 * 60 * 60 * 24);
+
+        if (collectionDaysOld <= 7) {
+
+          collectionScore += 50000;
+
+        } else if (
+          collectionDaysOld <= 30
+        ) {
+
+          collectionScore += 25000;
+
+        } else if (
+          collectionDaysOld <= 90
+        ) {
+
+          collectionScore += 10000;
+
+        }
+
         return {
 
           ...c,
 
           latestDate:
-            latestProduct?.createdAt ||
             latestProduct?.shopifyCreatedAt ||
-            c.updatedAt ||
+            latestProduct?.createdAt ||
+            c.shopifyCreatedAt ||
             c.createdAt ||
             0,
-
-          score:
-
-            relatedProducts
-              .reduce(
-                (acc, p) =>
-                  acc + (
-                    p.score || 0
-                  ),
-                0
-              )
-
+          score: collectionScore
         };
 
       });
@@ -1060,7 +1035,38 @@ router.get("/search", async (req, res) => {
       collections:
         formattedCollections,
       products:
-        products.slice(0, 20),
+
+        products
+
+          .sort((a, b) => {
+
+            // SCORE FIRST
+            if (
+              b.score !== a.score
+            ) {
+              return b.score - a.score;
+            }
+
+            // THEN NEWEST
+            return (
+
+              new Date(
+                b.shopifyCreatedAt ||
+                b.createdAt ||
+                0
+              ) -
+
+              new Date(
+                a.shopifyCreatedAt ||
+                a.createdAt ||
+                0
+              )
+
+            );
+
+          })
+
+          .slice(0, 20),
       suggestions: []
     });
   } catch (err) {
@@ -1265,12 +1271,10 @@ router.get("/trending-brands", async (req, res) => {
     edges {
 
       node {
-
         id
         vendor
         title
         handle
-
         createdAt
         updatedAt
         publishedAt
