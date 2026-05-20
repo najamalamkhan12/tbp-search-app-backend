@@ -34,9 +34,9 @@ const productSchema =
     // =========================
     handle: {
       type: String,
-      default: ""
+      default: "",
+      index: true
     },
-
     // =========================
     // 🔥 DESCRIPTION
     // =========================
@@ -90,8 +90,9 @@ const productSchema =
     // 🔥 PRICE
     // =========================
     price: {
-      type: String,
-      default: "0"
+      type: Number,
+      default: 0,
+      index: true
     },
 
     // =========================
@@ -103,11 +104,29 @@ const productSchema =
     },
 
     // =========================
+    // 🔥 SHOPIFY DATES
+    // =========================
+    shopifyCreatedAt: {
+      type: Date,
+      index: true
+    },
+
+    shopifyUpdatedAt: {
+      type: Date,
+      index: true
+    },
+
+    publishedAt: {
+      type: Date,
+      index: true
+    },
+
+    // =========================
     // 🔥 STATUS
     // =========================
     status: {
       type: String,
-      default: "ACTIVE",
+      default: "active",
       index: true
     },
 
@@ -130,12 +149,12 @@ const productSchema =
 productSchema.pre("save", function (next) {
 
   this.searchableText = `
-    ${this.title}
-    ${this.vendor}
-    ${this.productType}
-    ${this.tags.join(" ")}
-    ${this.collections.join(" ")}
-  `.toLowerCase();
+  ${this.title}
+  ${this.vendor}
+  ${this.productType}
+  ${(this.tags || []).join(" ")}
+  ${(this.collections || []).join(" ")}
+`.toLowerCase();
 
   next();
 });
@@ -155,24 +174,62 @@ productSchema.index({
 // ========================================
 // 🔥 TEXT SEARCH INDEX
 // ========================================
-productSchema.index({
-  searchableText: "text"
-});
+productSchema.index(
+  {
+    title: "text",
+    vendor: "text",
+    searchableText: "text"
+  },
+  {
+    weights: {
+      title: 10,
+      vendor: 7,
+      searchableText: 3
+    }
+  }
+);
 
 
 // ========================================
 // 🔥 FAST FILTERS
 // ========================================
+
 productSchema.index({
   store: 1,
-  vendor: 1
+  status: 1,
+  publishedAt: -1
+});
+
+// ========================================
+// 🔥 Indexes
+// ========================================
+
+productSchema.index({
+  store: 1,
+  publishedAt: -1
 });
 
 productSchema.index({
   store: 1,
-  status: 1
+  vendor: 1,
+  status: 1,
+  publishedAt: -1
 });
 
+productSchema.index({
+  store: 1,
+  vendor: 1,
+  publishedAt: -1
+});
+
+// ========================================
+// 🔥 COLLECTION INDEX
+// ========================================
+
+productSchema.index({
+  store: 1,
+  collections: 1
+});
 
 // ========================================
 // 🔥 EXPORT

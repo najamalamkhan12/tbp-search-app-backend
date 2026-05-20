@@ -45,6 +45,10 @@ const collectionSchema =
             type: Date,
             index: true
         },
+        shopifyPublishedAt: {
+            type: Date,
+            index: true
+        },
 
         searchableText: {
             type: String,
@@ -68,16 +72,29 @@ collectionSchema.index({
 // =====================================
 // TEXT SEARCH
 // =====================================
-collectionSchema.index({
-    searchableText: "text"
-});
+collectionSchema.index(
+    {
+        title: "text",
+        vendor: "text",
+        searchableText: "text"
+    },
+    {
+        weights: {
+            title: 10,
+            vendor: 6,
+            searchableText: 2
+        }
+    }
+);
 
 // =====================================
 // FAST NEWEST COLLECTIONS
 // =====================================
+
 collectionSchema.index({
     store: 1,
-    createdAt: -1
+    vendor: 1,
+    shopifyPublishedAt: -1
 });
 
 collectionSchema.index({
@@ -101,17 +118,33 @@ collectionSchema.index({
     handle: 1
 });
 
-collectionSchema.index({
-    store: 1,
-    vendor: 1
-});
-
 // =====================================
 // TRENDING COLLECTIONS
 // =====================================
 collectionSchema.index({
     store: 1,
     productsCount: -1
+});
+
+collectionSchema.index({
+    store: 1,
+    shopifyPublishedAt: -1
+});
+
+// =====================================
+// AUTO SEARCHABLE TEXT
+// =====================================
+
+collectionSchema.pre("save", function (next) {
+
+    this.searchableText = `
+      ${this.title}
+      ${this.handle}
+      ${this.vendor}
+    `.toLowerCase();
+
+    next();
+
 });
 
 module.exports = mongoose.model("Collection", collectionSchema);

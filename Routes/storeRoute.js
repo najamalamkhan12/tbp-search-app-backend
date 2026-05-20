@@ -163,71 +163,98 @@ router.post("/store/save", async (req, res) => {
     // =========================
     // VALIDATION
     // =========================
+
     if (!domain || !accessToken) {
 
       return res.status(400).json({
         error: "Missing fields"
       });
+
     }
 
     // =========================
     // CLEAN DOMAIN
     // =========================
+
     domain = domain
       .replace(/^https?:\/\//, "")
       .replace(/\/$/, "")
       .trim()
       .toLowerCase();
 
-    console.log("SAVING DOMAIN:", domain);
+    // =========================
+    // VERIFY TOKEN
+    // =========================
 
-    // =========================
-    // FIND STORE
-    // =========================
-    const existingStore =
-      await Store.findOne({
-        domain
+    const verifyResponse = await fetch(
+
+      `https://${domain}/admin/api/2024-01/shop.json`,
+
+      {
+        headers: {
+          "X-Shopify-Access-Token":
+            accessToken,
+          "Content-Type":
+            "application/json"
+        }
+      }
+
+    );
+
+    // INVALID TOKEN
+    if (!verifyResponse.ok) {
+
+      return res.status(401).json({
+        error:
+          "Invalid or expired token"
       });
 
-    // =========================
-    // UPDATE
-    // =========================
-    if (existingStore) {
-
-      existingStore.accessToken =
-        accessToken;
-
-      existingStore.shopName =
-        shopName;
-
-      await existingStore.save();
-
-      return res.json({
-        success: true,
-        message: "Store updated"
-      });
     }
 
     // =========================
-    // CREATE
+    // UPSERT STORE
     // =========================
-    await Store.create({
-      domain,
-      accessToken,
-      shopName
-    });
+
+    const store = await Store.findOneAndUpdate(
+
+      {
+        domain
+      },
+
+      {
+        domain,
+        accessToken,
+        shopName,
+        updatedAt: new Date()
+      },
+
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true
+      }
+
+    );
 
     res.json({
       success: true,
-      message: "Store saved"
+      message: "Store saved",
+      store
     });
 
   } catch (err) {
 
+    console.error(
+      "STORE SAVE ERROR:",
+      err.message
+    );
+
     res.status(500).json({
       error: err.message
     });
+
   }
+
 });
 
 module.exports = router;
