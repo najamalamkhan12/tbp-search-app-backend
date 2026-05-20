@@ -1404,8 +1404,8 @@ router.get("/trending-brands", async (req, res) => {
 
                 timestamp:
                   new Date(
-                    node.publishedAt ||
-                    node.createdAt ||
+                    p.node.publishedAt ||
+                    p.node.createdAt ||
                     0
                   ).getTime(),
 
@@ -1416,7 +1416,7 @@ router.get("/trending-brands", async (req, res) => {
 
                 price:
                   Number(
-                    p.variants?.edges?.[0]
+                    p.node.variants?.edges?.[0]
                       ?.node?.price || 0
                   ),
 
@@ -1547,11 +1547,12 @@ router.get("/trending-brands", async (req, res) => {
         // RECENCY BOOST
         // =========================
 
-        if (latestProduct?.createdAt) {
+        if (latestProduct?.publishedAt || latestProduct?.createdAt) {
 
           const latestDate =
             latestProduct.publishedAt ||
-            latestProduct.shopifyCreatedAt
+            latestProduct.createdAt ||
+            latestProduct.shopifyCreatedAt;
 
           const daysOld =
             (
