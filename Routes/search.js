@@ -1859,6 +1859,7 @@ router.get("/trending", async (req, res) => {
                       node.createdAt ||
                       0
                     ).getTime(),
+
                   image:
                     node.images
                       ?.edges?.[0]
@@ -1866,7 +1867,7 @@ router.get("/trending", async (req, res) => {
 
                   price:
                     Number(
-                      p.variants?.edges?.[0]
+                      node.variants?.edges?.[0]
                         ?.node?.price || 0
                     ),
 
