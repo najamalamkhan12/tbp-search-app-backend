@@ -93,6 +93,11 @@ const analyticsSchema =
       default: null,
     },
 
+    resultsCount: {
+      type: Number,
+      default: 0,
+    },
+
     // ======================
     // TIMESTAMP
     // ======================
@@ -111,8 +116,8 @@ const analyticsSchema =
 // ======================
 
 analyticsSchema.index({
-  type: 1,
   store: 1,
+  type: 1,
   createdAt: -1
 });
 
@@ -124,6 +129,14 @@ analyticsSchema.index({
 analyticsSchema.index({
   normalizedQuery: 1,
   createdAt: -1
+});
+
+analyticsSchema.index({
+  productId: 1
+});
+
+analyticsSchema.index({
+  resultsCount: 1
 });
 
 module.exports =

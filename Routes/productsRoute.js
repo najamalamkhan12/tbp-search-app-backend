@@ -1,13 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const fetch = require("node-fetch");
-const Settings = require("../Models/settingsModel");
 const Product = require("../Models/productModel");
 const Store = require("../Models/store")
 const Collection = require("../Models/collectionModel");
-const verifyWebhook = require('../middleware/verifyShopifyWebhook')
-
-
 
 // 🔄 SYNC PRODUCTS (Fetch version)
 router.post("/sync-products", async (req, res) => {
@@ -35,10 +31,9 @@ router.post("/sync-products", async (req, res) => {
     // =========================
     // 🔥 GET STORE TOKEN
     // =========================
-    const store =
-      await Store.findOne({
-        domain: shop
-      });
+    const store = await Store.findOne({
+      domain: shop
+    }).lean();
 
     if (!store) {
 
@@ -53,67 +48,68 @@ router.post("/sync-products", async (req, res) => {
 
     let totalSynced = 0;
 
-    let allProductIds = [];
+    let allProductIds = new Set();
+    let retryCount = 0;
     // =========================
     // 🔥 LOOP ALL PRODUCTS
     // =========================
     while (hasNextPage) {
 
       const query = `
-      query {
+query getProducts($cursor: String) {
 
-        products(
-          first: 250,
-          query: "status:active"
-          ${cursor ? `after: "${cursor}"` : ""}
-        ) {
+  products(
+    first: 250,
+    query: "status:active",
+    after: $cursor
+  ) {
 
-          pageInfo {
-            hasNextPage
-          }
+    pageInfo {
+      hasNextPage
+    }
 
+    edges {
+
+      cursor
+
+      node {
+        title
+        handle
+        description(truncateAt: 500)
+        vendor
+        productType
+        tags
+        status
+        createdAt
+        updatedAt
+        publishedAt
+        id
+
+        featuredImage {
+          url
+        }
+
+        variants(first: 1) {
           edges {
+            node {
+              price
+              inventoryQuantity
+            }
+          }
+        }
 
-            cursor
-
+        collections(first: 10) {
+          edges {
             node {
               title
-              handle
-              description
-              vendor
-              productType
-              tags
-              status
-              createdAt
-              updatedAt
-              publishedAt
-              id
-              
-              featuredImage {
-                url
-              }
-
-              variants(first: 1) {
-                edges {
-                  node {
-                    price
-                    inventoryQuantity
-                  }
-                }
-              }
-
-              collections(first: 10) {
-                edges {
-                  node {
-                    title
-                  }
-                }
-              }
             }
           }
         }
       }
-      `;
+    }
+  }
+}
+`;
 
       // =========================
       // 🔥 SHOPIFY API
@@ -132,28 +128,71 @@ router.post("/sync-products", async (req, res) => {
           },
 
           body: JSON.stringify({
-            query
+            query,
+            variables: {
+              cursor
+            }
           })
         }
       );
 
-      const data =
-        await response.json();
+      if (response.status === 429) {
+
+        retryCount++;
+
+        console.log(
+          `SHOPIFY RATE LIMITED... RETRY ${retryCount}`
+        );
+
+        if (retryCount >= 5) {
+
+          throw new Error(
+            "Shopify rate limit exceeded"
+          );
+
+        }
+
+        await new Promise(resolve =>
+          setTimeout(
+            resolve,
+            2000 * retryCount
+          )
+        );
+
+        continue;
+      }
+
+      // RESET RETRIES
+      retryCount = 0;
+
+      if (!response.ok) {
+
+        throw new Error(
+          `Shopify API Failed: ${response.status}`
+        );
+
+      }
+
+      const data = await response.json();
 
       // =========================
       // 🔥 CHECK ERRORS
       // =========================
-      if (data.errors) {
+      if (data?.errors) {
 
-        console.log(
+        console.error(
           "SHOPIFY GRAPHQL ERROR:",
-          data.errors
+          JSON.stringify(
+            data.errors || data,
+            null,
+            2
+          )
         );
 
-        return res.status(500).json({
-          error: "Shopify GraphQL Error",
-          details: data.errors
-        });
+        throw new Error(
+          data.errors?.[0]?.message ||
+          "Shopify GraphQL Error"
+        );
       }
 
       const products =
@@ -167,7 +206,7 @@ router.post("/sync-products", async (req, res) => {
 
           const p = item.node;
 
-          allProductIds.push(
+          allProductIds.add(
             String(p.id)
           );
           // COLLECTIONS
@@ -318,22 +357,19 @@ router.post("/sync-products", async (req, res) => {
     // 🔥 DELETE REMOVED PRODUCTS
     // =========================
 
-    const liveProductIds = [];
+    if (
+      allProductIds.size > 0 &&
+      totalSynced > 0
+    ) {
 
-    products.forEach(item => {
-      if (item?.node?.id) {
-        liveProductIds.push(
-          String(item.node.id)
-        );
-      }
-    });
+      await Product.deleteMany({
+        store: shop,
+        productId: {
+          $nin: [...allProductIds]
+        }
+      });
 
-    await Product.deleteMany({
-      store: shop,
-      productId: {
-        $nin: liveProductIds
-      }
-    });
+    }
 
     // =========================
     // ✅ DONE
@@ -347,6 +383,8 @@ router.post("/sync-products", async (req, res) => {
     });
 
   } catch (err) {
+
+    console.error(err);
 
     res.status(500).json({
       error: err.message
@@ -379,10 +417,9 @@ router.post("/sync-collections", async (req, res) => {
     // =========================
     // 🔥 STORE
     // =========================
-    const store =
-      await Store.findOne({
-        domain: shop
-      });
+    const store = await Store.findOne({
+      domain: shop
+    }).lean();
 
     if (!store) {
 
@@ -392,8 +429,6 @@ router.post("/sync-collections", async (req, res) => {
             "Store not found"
         });
     }
-
-    let allCollections = [];
 
     // =====================================
     // 🔥 FETCH FUNCTION
@@ -423,6 +458,13 @@ router.post("/sync-collections", async (req, res) => {
                 }
               }
             );
+          if (!response.ok) {
+
+            throw new Error(
+              `Shopify Collections API Failed: ${response.status}`
+            );
+
+          }
 
           const data = await response.json();
 
@@ -431,16 +473,16 @@ router.post("/sync-collections", async (req, res) => {
             data.error
           ) {
 
-            console.log(
+            console.error(
               "SHOPIFY API ERROR:",
-              data
+              JSON.stringify(
+                data,
+                null,
+                2
+              )
             );
 
-            return res.status(401).json({
-              error:
-                "Shopify token expired",
-              details: data
-            });
+            throw new Error("Shopify token expired");
           }
 
           const key =
@@ -454,6 +496,113 @@ router.post("/sync-collections", async (req, res) => {
           const collections =
             data[key] || [];
 
+          const filteredCollections =
+            collections.filter(c => {
+
+              return (
+                c.title &&
+                c.handle &&
+                c.published_at
+              );
+
+            });
+
+          const operations =
+            filteredCollections.map(c => {
+
+              collectionIds.add(
+                String(c.id)
+              );
+              const searchableText = [
+
+                c.title || "",
+
+                c.handle || "",
+
+                c.body_html || ""
+
+              ]
+                .join(" ")
+                .toLowerCase()
+                .replace(/\s+/g, " ")
+                .trim();
+
+              return {
+
+                updateOne: {
+
+                  filter: {
+                    store: shop,
+                    collectionId:
+                      String(c.id)
+                  },
+
+                  update: {
+
+                    $set: {
+
+                      store: shop,
+
+                      collectionId:
+                        String(c.id),
+
+                      title:
+                        c.title || "",
+
+                      handle:
+                        c.handle || "",
+
+                      description:
+                        c.body_html || "",
+
+                      image:
+                        c.image?.src || "",
+
+                      searchableText,
+
+                      publishedAt:
+                        c.published_at
+                          ? new Date(
+                            c.published_at
+                          )
+                          : null,
+
+                      shopifyCreatedAt:
+                        new Date(
+                          c.published_at ||
+                          c.created_at
+                        ),
+
+                      shopifyUpdatedAt:
+                        c.updated_at
+                          ? new Date(
+                            c.updated_at
+                          )
+                          : new Date(
+                            c.created_at
+                          )
+
+                    }
+
+                  },
+
+                  upsert: true
+
+                }
+
+              };
+
+            });
+
+          if (operations.length > 0) {
+
+            await Collection.bulkWrite(
+              operations,
+              { ordered: false }
+            );
+
+          }
+
           if (
             collections.length === 0
           ) {
@@ -463,28 +612,16 @@ router.post("/sync-collections", async (req, res) => {
             break;
           }
 
-          allCollections.push(
-            ...collections
-          );
-
           since_id =
             collections[
               collections.length - 1
             ].id;
         }
 
-        // =========================
-        // 🔥 DELETE REMOVED PRODUCTS
-        // =========================
-
-        await Product.deleteMany({
-          store: shop,
-          productId: {
-            $nin: allProductIds
-          }
-        });
-
       };
+
+    let collectionIds =
+      new Set();
 
     // =====================================
     // 🔥 CUSTOM COLLECTIONS
@@ -500,110 +637,28 @@ router.post("/sync-collections", async (req, res) => {
       "smart_collections"
     );
 
-    // =====================================
-    // 🔥 FILTER VALID COLLECTIONS
-    // =====================================
-    const filteredCollections =
-      allCollections.filter(c => {
+    const totalCollections =
+      collectionIds.size;
 
-        return (
-          c.title &&
-          c.handle &&
-          c.published_at
-        );
+    // =====================================
+    // 🔥 DELETE REMOVED COLLECTIONS
+    // =====================================
+
+    if (
+      totalCollections > 0
+    ) {
+
+      await Collection.deleteMany({
+
+        store: shop,
+
+        collectionId: {
+          $nin: [...collectionIds]
+        }
+
       });
 
-    // =====================================
-    // 🔥 BULK OPERATIONS
-    // =====================================
-    const operations =
-      filteredCollections.map(c => ({
-
-        updateOne: {
-
-          filter: {
-
-            store: shop,
-
-            collectionId:
-              String(c.id)
-
-          },
-
-          update: {
-
-            $set: {
-
-              store: shop,
-
-              collectionId:
-                String(c.id),
-
-              title:
-                c.title || "",
-
-              handle:
-                c.handle || "",
-
-              image:
-                c.image?.src || "",
-
-              productsCount:
-                c.products_count || 0,
-
-              // 🔥 IMPORTANT
-              // latest ranking fix
-              shopifyCreatedAt:
-                new Date(
-                  c.published_at ||
-                  c.created_at
-                ),
-
-              searchableText: `
-                  ${c.title || ""}
-                  ${c.handle || ""}
-                `
-                .toLowerCase()
-                .replace(/\s+/g, " ")
-                .trim()
-            }
-          },
-
-          upsert: true
-        }
-      }));
-
-    // =====================================
-    // 🔥 SAVE COLLECTIONS
-    // =====================================
-    if (operations.length > 0) {
-
-      await Collection.bulkWrite(
-        operations,
-        {
-          ordered: false
-        }
-      );
     }
-
-    // =====================================
-    // 🔥 DELETE REMOVED
-    // COLLECTIONS
-    // =====================================
-    const collectionIds =
-      filteredCollections.map(c =>
-        String(c.id)
-      );
-
-    await Collection.deleteMany({
-
-      store: shop,
-
-      collectionId: {
-        $nin: collectionIds
-      }
-
-    });
 
     // =====================================
     // ✅ DONE
@@ -613,15 +668,16 @@ router.post("/sync-collections", async (req, res) => {
       success: true,
 
       synced:
-        filteredCollections.length
+        totalCollections
 
     });
 
   } catch (err) {
 
+    console.error(err);
+
     res.status(500).json({
-      error:
-        err.message
+      error: err.message
     });
   }
 }
