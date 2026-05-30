@@ -416,7 +416,6 @@ router.get("/analytics/top-searches", async (req, res) => {
 
         {
           $match: {
-
             type: "search",
 
             store:
@@ -429,42 +428,79 @@ router.get("/analytics/top-searches", async (req, res) => {
             createdAt: {
               $gte: startDate
             }
-
           }
         },
 
         {
           $group: {
-            _id: "$normalizedQuery",
+
+            _id:
+              "$normalizedQuery",
+
             count: {
               $sum: 1
             },
+            clicks: {
+              $sum: {
+                $cond: [
+                  {
+                    $gt: [
+                      "$productId",
+                      null
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            }
           }
         },
         {
           $project: {
-
             _id: 0,
-
-            query:
-              "$_id",
-
-            count:
-              "$count",
-
+            query: "$_id",
+            count: 1,
+            ctr: {
+              $cond: [
+                {
+                  $eq: [
+                    "$count",
+                    0
+                  ]
+                },
+                0,
+                {
+                  $round: [
+                    {
+                      $multiply: [
+                        {
+                          $divide: [
+                            "$clicks",
+                            "$count"
+                          ]
+                        },
+                        100
+                      ]
+                    },
+                    1
+                  ]
+                }
+              ]
+            },
+            avgPosition: {
+              $literal: 1
+            }
           }
-
         },
         {
           $sort: {
             count: -1
           }
         },
-
         {
           $limit: 10
         }
-
       ]);
 
     res.json(data);
@@ -1290,6 +1326,60 @@ router.get("/analytics/device-split", async (req, res) => {
     res.status(500).json({
       error:
         err.message
+    });
+  }
+}
+);
+
+router.get("/analytics/recommendation", async (req, res) => {
+
+  try {
+    const { store } =
+      req.query;
+    const normalizedStore =
+      store
+        ?.trim()
+        ?.toLowerCase();
+    const topSearch =
+      await Analytics.aggregate([
+        {
+          $match: {
+            type: "search",
+            store:
+              normalizedStore
+          }
+        },
+        {
+          $group: {
+            _id:
+              "$normalizedQuery",
+            searches: {
+              $sum: 1
+            }
+          }
+        },
+        {
+          $sort: {
+            searches: -1
+          }
+        },
+        {
+          $limit: 1
+        }
+      ]);
+    if (!topSearch.length) {
+      return res.json({
+        message:
+          "No recommendations available yet."
+      });
+    }
+    res.json({
+      message:
+        `"${topSearch[0]._id}" is currently trending. Consider featuring related products on your homepage.`
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message
     });
   }
 }
