@@ -238,7 +238,9 @@ router.post("/analytics", async (req, res) => {
             !existingSynonym ||
             existingSynonym.usageCount % 5 === 0
           ) {
-            await item.save();
+            await item.save({
+              validateBeforeSave: false
+            });
 
           }
         }
@@ -416,7 +418,13 @@ router.get("/analytics/top-searches", async (req, res) => {
 
         {
           $match: {
-            type: "search",
+
+            type: {
+              $in: [
+                "search",
+                "click"
+              ]
+            },
 
             store:
               normalizedStore,
@@ -428,6 +436,7 @@ router.get("/analytics/top-searches", async (req, res) => {
             createdAt: {
               $gte: startDate
             }
+
           }
         },
 
@@ -438,15 +447,27 @@ router.get("/analytics/top-searches", async (req, res) => {
               "$normalizedQuery",
 
             count: {
-              $sum: 1
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$type",
+                      "search"
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
             },
+
             clicks: {
               $sum: {
                 $cond: [
                   {
-                    $gt: [
-                      "$productId",
-                      null
+                    $eq: [
+                      "$type",
+                      "click"
                     ]
                   },
                   1,
@@ -525,8 +546,33 @@ router.get("/analytics/top-products", async (req, res) => {
         error: "Store is required"
       });
     }
+
+    const {
+      days: rawDays
+    } = req.query;
+
+    const parsedDays =
+      Number(rawDays);
+
+    const days =
+      Number.isNaN(parsedDays) ||
+        parsedDays <= 0 ||
+        parsedDays > 365
+        ? 7
+        : parsedDays;
+
+    const startDate =
+      new Date();
+
+    startDate.setDate(
+      startDate.getDate() - days
+    );
+
     const match = {
       type: "click",
+      createdAt: {
+        $gte: startDate
+      },
       productId: {
         $exists: true,
         $nin: ["", null]
@@ -1336,18 +1382,39 @@ router.get("/analytics/recommendation", async (req, res) => {
   try {
     const { store } =
       req.query;
+    if (!store) {
+
+      return res.status(400).json({
+        error: "Store is required"
+      });
+
+    }
     const normalizedStore =
       store
         ?.trim()
         ?.toLowerCase();
+
+    const startDate = new Date();
+    startDate.setDate(
+      startDate.getDate() - 30
+    );
     const topSearch =
       await Analytics.aggregate([
         {
           $match: {
+
             type: "search",
             store:
-              normalizedStore
-          }
+              normalizedStore,
+            normalizedQuery: {
+              $ne: ""
+            },
+
+            createdAt: {
+              $gte: startDate
+            }
+
+          },
         },
         {
           $group: {
@@ -1375,7 +1442,9 @@ router.get("/analytics/recommendation", async (req, res) => {
     }
     res.json({
       message:
-        `"${topSearch[0]._id}" is currently trending. Consider featuring related products on your homepage.`
+        topSearch?.[0]?._id
+          ? `"${topSearch[0]._id}" is currently trending. Consider featuring related products on your homepage.`
+          : "No recommendations available yet."
     });
   } catch (err) {
     res.status(500).json({
