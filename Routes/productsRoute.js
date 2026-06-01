@@ -51,16 +51,16 @@ router.post("/sync-products", async (req, res) => {
     let allProductIds = new Set();
     let retryCount = 0;
     // =========================
+    let previousCursor = null;
     // 🔥 LOOP ALL PRODUCTS
     // =========================
     while (hasNextPage) {
-
       const query = `
 query getProducts($cursor: String) {
 
   products(
     first: 250,
-    query: "status:active",
+    query:"status:active published_status:published",
     after: $cursor
   ) {
 
@@ -73,18 +73,17 @@ query getProducts($cursor: String) {
       cursor
 
       node {
-        title
-        handle
-        description(truncateAt: 500)
-        vendor
-        productType
-        tags
-        status
-        createdAt
-        updatedAt
-        publishedAt
-        id
-
+  id
+  title
+  handle
+  descriptionHtml
+  vendor
+  productType
+  status
+  tags
+  createdAt
+  updatedAt
+  publishedAt
         featuredImage {
           url
         }
@@ -99,12 +98,13 @@ query getProducts($cursor: String) {
         }
 
         collections(first: 10) {
-          edges {
-            node {
-              title
-            }
-          }
-        }
+  edges {
+    node {
+      id
+      title
+    }
+  }
+}
       }
     }
   }
@@ -195,28 +195,54 @@ query getProducts($cursor: String) {
         );
       }
 
+      if (
+        !data?.data?.products
+      ) {
+
+        throw new Error(
+          "Invalid Shopify products response"
+        );
+      }
+
       const products =
         data?.data?.products?.edges || [];
+
+      if (
+        products.length === 0
+      ) {
+        break;
+      }
 
       // =========================
       // 🔥 BULK OPERATIONS
       // =========================
       const operations =
         products.map(item => {
-
+          if (!item?.node) {
+            return null;
+          }
           const p = item.node;
-
-          allProductIds.add(
-            String(p.id)
-          );
+          if (p.id) {
+            allProductIds.add(
+              String(p.id)
+            );
+          }
           // COLLECTIONS
           const collections =
             Array.isArray(
               p.collections?.edges
             )
-              ? p.collections.edges.map(
-                c => c.node.title || ""
-              )
+              ? p.collections.edges
+                .filter(c => c?.node)
+                .map(
+                  c => ({
+                    id:
+                      String(c.node.id),
+
+                    title:
+                      c.node.title || ""
+                  })
+                )
               : [];
 
           // PRICE
@@ -228,10 +254,14 @@ query getProducts($cursor: String) {
 
           // STOCK
           const stock =
-            p.variants?.edges?.[0]
-              ?.node
-              ?.inventoryQuantity || 0;
-
+            Math.max(
+              0,
+              Number(
+                p.variants?.edges?.[0]
+                  ?.node
+                  ?.inventoryQuantity
+              ) || 0
+            );
           // SEARCHABLE TEXT
           const searchableText = [
 
@@ -246,7 +276,9 @@ query getProducts($cursor: String) {
               : "",
 
             Array.isArray(collections)
-              ? collections.join(" ")
+              ? collections
+                .map(c => c.title)
+                .join(" ")
               : ""
 
           ]
@@ -280,8 +312,11 @@ query getProducts($cursor: String) {
                     p.handle || "",
 
                   description:
-                    p.description || "",
-
+                    String(
+                      p.descriptionHtml || ""
+                    )
+                      .replace(/<[^>]*>/g, "")
+                      .slice(0, 2000),
                   vendor:
                     p.vendor || "",
 
@@ -296,27 +331,37 @@ query getProducts($cursor: String) {
                   image:
                     p.featuredImage?.url || "",
 
-                  price: Number(price) || 0,
+                  price: price || 0,
 
                   stock:
                     stock,
 
                   collections:
-                    collections,
+                    (collections || []).map(
+                      c => String(c.id)
+                    ),
 
                   status:
                     (p.status || "active").toLowerCase(),
 
                   shopifyCreatedAt:
-                    p.createdAt,
+                    p.createdAt
+                      ? new Date(p.createdAt)
+                      : null,
 
                   publishedAt:
                     p.publishedAt
                       ? new Date(p.publishedAt)
-                      : new Date(p.createdAt),
+                      : (
+                        p.createdAt
+                          ? new Date(p.createdAt)
+                          : null
+                      ),
 
                   shopifyUpdatedAt:
-                    p.updatedAt,
+                    p.updatedAt
+                      ? new Date(p.updatedAt)
+                      : null,
                   searchableText
                 }
               },
@@ -324,7 +369,7 @@ query getProducts($cursor: String) {
               upsert: true
             }
           };
-        });
+        }).filter(Boolean);
 
       // =========================
       // 🔥 SAVE BATCH
@@ -344,13 +389,31 @@ query getProducts($cursor: String) {
       // 🔥 PAGINATION
       // =========================
       hasNextPage =
-        data?.data?.products
-          ?.pageInfo?.hasNextPage;
+        Boolean(
+          data?.data?.products
+            ?.pageInfo?.hasNextPage
+        );
 
-      cursor =
+      const nextCursor =
         products[
           products.length - 1
         ]?.cursor || null;
+      if (!nextCursor) {
+        break;
+      }
+      if (
+        nextCursor === previousCursor
+      ) {
+        console.log(
+          "DUPLICATE CURSOR STOPPED"
+        );
+        break;
+      }
+      previousCursor =
+        nextCursor;
+
+      cursor =
+        nextCursor;
     }
 
     // =========================
@@ -365,7 +428,7 @@ query getProducts($cursor: String) {
       await Product.deleteMany({
         store: shop,
         productId: {
-          $nin: [...allProductIds]
+          $nin: Array.from(allProductIds)
         }
       });
 
@@ -375,307 +438,273 @@ query getProducts($cursor: String) {
     // ✅ DONE
     // =========================
     res.json({
-
       success: true,
-
       totalSynced
-
     });
-
   } catch (err) {
-
     console.error(err);
-
     res.status(500).json({
       error: err.message
     });
   }
 });
 
+// ==========================================
+// 🔥 SYNC COLLECTIONS
+// ==========================================
 router.post("/sync-collections", async (req, res) => {
-
   try {
-
-    let { shop } =
+    const { shop } =
       req.body;
-
     if (!shop) {
+      return res.status(400).json({
+        error:
+          "Shop is required"
+      });
+    }
+    const normalizedShop =
+      shop
+        ?.trim()
+        ?.toLowerCase();
 
-      return res.status(400)
-        .json({
-          error:
-            "Shop required"
-        });
+    // ======================================
+    // 🔥 SHOPIFY SESSION
+    // ======================================
+    const session =
+      await Store.findOne({
+        domain: normalizedShop
+      });
+    if (!session) {
+      return res.status(404).json({
+        error:
+          "Store session not found"
+      });
     }
 
-    shop = shop
-      .replace(/^https?:\/\//, "")
-      .replace(/\/$/, "")
-      .trim()
-      .toLowerCase();
+    // ======================================
+    // 🔥 STORE ALL IDS
+    // ======================================
+    let collectionIds =
+      new Set();
 
-    // =========================
-    // 🔥 STORE
-    // =========================
-    const store = await Store.findOne({
-      domain: shop
-    }).lean();
+    const activeCollections =
+      new Set(
+        await Product.distinct(
+          "collections",
+          {
+            store:
+              normalizedShop,
+            status: "active"
+          }
+        )
+      );
 
-    if (!store) {
-
-      return res.status(404)
-        .json({
-          error:
-            "Store not found"
-        });
-    }
-
-    // =====================================
+    // ======================================
     // 🔥 FETCH FUNCTION
-    // =====================================
+    // ======================================
     const fetchCollections =
       async (type) => {
-
-        let since_id = 0;
-
+        let page = 1;
+        let retryCount = 0;
         let hasMore = true;
-
         while (hasMore) {
-
           const response =
             await fetch(
-
-              `https://${shop}/admin/api/2025-01/${type}.json?limit=250&since_id=${since_id}`,
-
+              `https://${normalizedShop}/admin/api/2024-01/${type}.json?limit=250&page=${page}`,
               {
                 headers: {
-
                   "X-Shopify-Access-Token":
-                    store.accessToken,
-
+                    session.accessToken,
                   "Content-Type":
                     "application/json"
                 }
               }
             );
-          if (!response.ok) {
 
-            throw new Error(
-              `Shopify Collections API Failed: ${response.status}`
-            );
-
-          }
-
-          const data = await response.json();
-
+          // ==============================
+          // 🔥 RATE LIMIT
+          // ==============================
           if (
-            data.errors ||
-            data.error
+            response.status === 429
           ) {
-
-            console.error(
-              "SHOPIFY API ERROR:",
-              JSON.stringify(
-                data,
-                null,
-                2
-              )
+            retryCount++;
+            console.log(
+              `COLLECTION RATE LIMITED... RETRY ${retryCount}`
             );
+            if (retryCount >= 5) {
+              throw new Error(
+                "Collections rate limit exceeded"
+              );
 
-            throw new Error("Shopify token expired");
+            }
+            await new Promise(
+              resolve =>
+                setTimeout(
+                  resolve,
+                  2000 * retryCount
+                )
+            );
+            continue;
           }
-
-          const key =
-            type ===
-              "custom_collections"
-
-              ? "custom_collections"
-
-              : "smart_collections";
-
+          retryCount = 0;
+          if (!response.ok) {
+            throw new Error(
+              `Collections API Failed: ${response.status}`
+            );
+          }
+          const data =
+            await response.json();
           const collections =
-            data[key] || [];
+            Array.isArray(data[type])
+              ? data[type]
+              : [];
 
-          const filteredCollections =
-            collections.filter(c => {
-
-              return (
-                c.title &&
-                c.handle &&
-                c.published_at
-              );
-
-            });
-
-          const operations =
-            filteredCollections.map(c => {
-
-              collectionIds.add(
-                String(c.id)
-              );
-              const searchableText = [
-
-                c.title || "",
-
-                c.handle || "",
-
-                c.body_html || ""
-
-              ]
-                .join(" ")
-                .toLowerCase()
-                .replace(/\s+/g, " ")
-                .trim();
-
-              return {
-
-                updateOne: {
-
-                  filter: {
-                    store: shop,
-                    collectionId:
-                      String(c.id)
-                  },
-
-                  update: {
-
-                    $set: {
-
-                      store: shop,
-
-                      collectionId:
-                        String(c.id),
-
-                      title:
-                        c.title || "",
-
-                      handle:
-                        c.handle || "",
-
-                      description:
-                        c.body_html || "",
-
-                      image:
-                        c.image?.src || "",
-
-                      searchableText,
-
-                      publishedAt:
-                        c.published_at
-                          ? new Date(
-                            c.published_at
-                          )
-                          : null,
-
-                      shopifyCreatedAt:
-                        new Date(
-                          c.published_at ||
-                          c.created_at
-                        ),
-
-                      shopifyUpdatedAt:
-                        c.updated_at
-                          ? new Date(
-                            c.updated_at
-                          )
-                          : new Date(
-                            c.created_at
-                          )
-
-                    }
-
-                  },
-
-                  upsert: true
-
-                }
-
-              };
-
-            });
-
-          if (operations.length > 0) {
-
-            await Collection.bulkWrite(
-              operations,
-              { ordered: false }
-            );
-
-          }
-
+          // ==============================
+          // 🔥 STOP PAGINATION
+          // ==============================
           if (
             collections.length === 0
           ) {
-
-            hasMore = false;
-
             break;
           }
+          if (
+            collections.length < 250
+          ) {
+            hasMore = false;
+          }
 
-          since_id =
-            collections[
-              collections.length - 1
-            ].id;
+          // ==============================
+          // 🔥 PREPARE BULK OPS
+          // ==============================
+          const bulkOps =
+            (
+              await Promise.all(
+                collections.map(
+                  async c => {
+                    // ==============================
+                    // 🔥 CHECK ACTIVE PRODUCTS
+                    // ==============================
+
+                    if (
+                      !activeCollections.has(
+                        String(c.id)
+                      )
+                    ) {
+
+                      return null;
+
+                    }
+
+                    collectionIds.add(
+                      String(c.id)
+                    );
+                    return {
+                      updateOne: {
+                        filter: {
+                          store:
+                            normalizedShop,
+                          collectionId:
+                            String(c.id)
+                        },
+                        update: {
+                          $set: {
+                            store:
+                              normalizedShop,
+                            collectionId:
+                              String(c.id),
+                            title:
+                              c.title || "",
+                            handle:
+                              c.handle || "",
+                            description:
+                              String(
+                                c.body_html || ""
+                              )
+                                .replace(/<[^>]*>/g, "")
+                                .slice(0, 2000),
+                            image:
+                              c.image?.src || "",
+                            rules:
+                              c.rules || [],
+                            type,
+                            publishedAt:
+                              c.published_at
+                                ? new Date(
+                                  c.published_at
+                                )
+                                : null
+                          }
+                        },
+                        upsert: true
+                      }
+                    };
+                  }
+                )
+              )
+            ).filter(Boolean);
+
+          // ==============================
+          // 🔥 BULK WRITE
+          // ==============================
+          if (
+            bulkOps.length > 0
+          ) {
+            await Collection.bulkWrite(
+              bulkOps,
+              {
+                ordered: false
+              }
+            );
+          }
+          console.log(
+            `${type} page ${page} synced:`,
+            bulkOps.length
+          );
+          page++;
         }
-
       };
 
-    let collectionIds =
-      new Set();
+    // ======================================
+    // 🔥 FETCH BOTH TYPES
+    // ======================================
 
-    // =====================================
-    // 🔥 CUSTOM COLLECTIONS
-    // =====================================
     await fetchCollections(
       "custom_collections"
     );
-
-    // =====================================
-    // 🔥 SMART COLLECTIONS
-    // =====================================
     await fetchCollections(
       "smart_collections"
     );
 
+    // ======================================
+    // 🔥 CLEANUP OLD COLLECTIONS
+    // ======================================
     const totalCollections =
       collectionIds.size;
-
-    // =====================================
-    // 🔥 DELETE REMOVED COLLECTIONS
-    // =====================================
-
     if (
-      totalCollections > 0
+      totalCollections > 20
     ) {
-
       await Collection.deleteMany({
-
-        store: shop,
-
+        store:
+          normalizedShop,
         collectionId: {
-          $nin: [...collectionIds]
+          $nin:
+            Array.from(
+              collectionIds
+            )
         }
-
       });
-
     }
 
-    // =====================================
-    // ✅ DONE
-    // =====================================
+    // ======================================
+    // 🔥 RESPONSE
+    // ======================================
     res.json({
-
       success: true,
-
       synced:
         totalCollections
-
     });
-
   } catch (err) {
-
     console.error(err);
-
     res.status(500).json({
       error: err.message
     });

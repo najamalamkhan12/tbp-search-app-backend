@@ -102,7 +102,11 @@ router.post("/analytics", async (req, res) => {
       query:
         query?.trim() || "",
 
-      normalizedQuery,
+      normalizedQuery:
+
+        query
+          ?.trim()
+          ?.toLowerCase() || "",
 
       productId,
 
