@@ -60,7 +60,7 @@ query getProducts($cursor: String) {
 
   products(
     first: 250,
-    query:"status:active",
+    query:"status:active published_status:published",
     after: $cursor
   ) {
 
@@ -98,7 +98,7 @@ query getProducts($cursor: String) {
           }
         }
 
-        collections(first: 50) {
+        collections(first: 250) {
   edges {
     node {
       id
@@ -223,14 +223,12 @@ query getProducts($cursor: String) {
           if (!item?.node) {
             return null;
           }
+          const p = item.node;
           if (
             !p.publishedAt
           ) {
-
             return null;
-
           }
-          const p = item.node;
           if (p.id) {
             allProductIds.add(
               String(p.id)
@@ -301,15 +299,20 @@ query getProducts($cursor: String) {
             updateOne: {
 
               filter: {
-                store: shop,
+                store:
+                  shop
+                    .trim()
+                    .toLowerCase(),
                 productId: String(p.id)
               },
 
               update: {
 
                 $set: {
-
-                  store: shop,
+                  store:
+                    shop
+                      .trim()
+                      .toLowerCase(),
 
                   productId:
                     String(p.id),
@@ -429,12 +432,15 @@ query getProducts($cursor: String) {
     // =========================
 
     if (
-      allProductIds.size > 100 &&
-      totalSynced > 100
+      hasNextPage === false &&
+      allProductIds.size > 5000 &&
+      totalSynced > 5000
     ) {
 
       await Product.deleteMany({
-        store: shop,
+        store: shop
+          .trim()
+          .toLowerCase(),
         productId: {
           $nin: Array.from(allProductIds)
         }
@@ -496,25 +502,29 @@ router.post("/sync-collections", async (req, res) => {
       new Set();
 
     const rawCollections =
-      await Product.distinct(
-        "collections",
+      await Product.find(
         {
           store:
             normalizedShop,
-          status: "active"
+          status: "active",
+          publishedAt: {
+            $ne: null
+          }
+        },
+        {
+          collections: 1
         }
-      );
+      ).lean();
 
     const activeCollections =
       new Set(
-
-        rawCollections.map(id =>
-          String(id)
-            .split("/")
-            .pop()
-
-        )
-
+        rawCollections
+          .flatMap(
+            p =>
+              p.collections || []
+          )
+          .map(id =>
+            String(id))
       );
 
     // ======================================
@@ -651,34 +661,24 @@ router.post("/sync-collections", async (req, res) => {
           const bulkOps =
             collections
               .map(c => {
-
                 // ONLY ACTIVE PRODUCTS
                 if (
                   !activeCollections.has(
                     String(c.id)
                   )
                 ) {
-
                   return null;
-
                 }
-
                 collectionIds.add(
                   String(c.id)
                 );
-
                 return {
-
                   updateOne: {
-
                     filter: {
-
                       store:
                         normalizedShop,
-
                       collectionId:
                         String(c.id)
-
                     },
 
                     update: {
@@ -776,7 +776,7 @@ router.post("/sync-collections", async (req, res) => {
     const totalCollections =
       collectionIds.size;
     if (
-      totalCollections > 20
+      totalCollections > 200
     ) {
       await Collection.deleteMany({
         store:
