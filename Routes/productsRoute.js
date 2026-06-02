@@ -524,7 +524,12 @@ router.post("/sync-collections", async (req, res) => {
               p.collections || []
           )
           .map(id =>
-            String(id))
+
+            String(id)
+              .split("/")
+              .pop()
+
+          )
       );
 
     // ======================================
