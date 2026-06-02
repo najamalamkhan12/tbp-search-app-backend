@@ -60,7 +60,7 @@ query getProducts($cursor: String) {
 
   products(
     first: 250,
-    query:"status:active published_status:published",
+    query:"status:active",
     after: $cursor
   ) {
 
@@ -98,7 +98,7 @@ query getProducts($cursor: String) {
           }
         }
 
-        collections(first: 250) {
+        collections(first: 50) {
   edges {
     node {
       id
@@ -212,7 +212,11 @@ query getProducts($cursor: String) {
       if (
         products.length === 0
       ) {
+
+        hasNextPage = false;
+
         break;
+
       }
 
       // =========================
@@ -432,7 +436,7 @@ query getProducts($cursor: String) {
     // =========================
 
     if (
-      hasNextPage === false &&
+      !hasNextPage &&
       allProductIds.size > 5000 &&
       totalSynced > 5000
     ) {
@@ -502,7 +506,8 @@ router.post("/sync-collections", async (req, res) => {
       new Set();
 
     const rawCollections =
-      await Product.find(
+      await Product.distinct(
+        "collections",
         {
           store:
             normalizedShop,
@@ -510,19 +515,12 @@ router.post("/sync-collections", async (req, res) => {
           publishedAt: {
             $ne: null
           }
-        },
-        {
-          collections: 1
         }
-      ).lean();
+      );
 
     const activeCollections =
       new Set(
         rawCollections
-          .flatMap(
-            p =>
-              p.collections || []
-          )
           .map(id =>
 
             String(id)
@@ -643,7 +641,22 @@ router.post("/sync-collections", async (req, res) => {
 
           const data =
             await response.json();
+          const throttleStatus =
+            data?.extensions?.cost
+              ?.throttleStatus;
 
+          if (
+            throttleStatus &&
+            throttleStatus
+              .currentlyAvailable < 100
+          ) {
+
+            await new Promise(
+              resolve =>
+                setTimeout(resolve, 1500)
+            );
+
+          }
           const collections =
             Array.isArray(data[type])
               ? data[type]
