@@ -126,6 +126,8 @@ const productSchema =
       index: true
     },
 
+    firstPublishedAt: { type: Date, default: null },
+
     // =========================
     // 🔥 STATUS
     // =========================

@@ -354,41 +354,41 @@ router.get("/search", async (req, res) => {
     // =========================
     let searchConditions = [];
 
-if (detectedVendor) {
+    if (detectedVendor) {
 
-  // ✅ VENDOR MATCH
-  searchConditions.push({
-    vendor: { $regex: escapeRegex(detectedVendor), $options: "i" }
-  });
+      // ✅ VENDOR MATCH
+      searchConditions.push({
+        vendor: { $regex: escapeRegex(detectedVendor), $options: "i" }
+      });
 
-  // ✅ REMAINING QUERY
-  if (remainingQuery) {
-    searchConditions.push({
-      $or: [
-        ...remainingTokens.map(t => ({
-          title: { $regex: escapeRegex(t), $options: "i" }
-        })),
-        { searchableText: { $regex: escapeRegex(remainingQuery), $options: "i" } },
-        { tags:           { $regex: escapeRegex(remainingQuery), $options: "i" } },
-        { collections:    { $regex: escapeRegex(remainingQuery), $options: "i" } }
-      ]
-    });
-  }
+      // ✅ REMAINING QUERY
+      if (remainingQuery) {
+        searchConditions.push({
+          $or: [
+            ...remainingTokens.map(t => ({
+              title: { $regex: escapeRegex(t), $options: "i" }
+            })),
+            { searchableText: { $regex: escapeRegex(remainingQuery), $options: "i" } },
+            { tags: { $regex: escapeRegex(remainingQuery), $options: "i" } },
+            { collections: { $regex: escapeRegex(remainingQuery), $options: "i" } }
+          ]
+        });
+      }
 
-} else {
+    } else {
 
-  // 🔥 NORMAL SEARCH
-  searchConditions.push({
-    $or: [
-      { title:          { $regex: escapeRegex(normalizedQuery), $options: "i" } },
-      { vendor:         { $regex: escapeRegex(normalizedQuery), $options: "i" } },
-      { productType:    { $regex: escapeRegex(normalizedQuery), $options: "i" } },
-      { searchableText: { $regex: escapeRegex(normalizedQuery), $options: "i" } },
-      { tags:           { $regex: escapeRegex(normalizedQuery), $options: "i" } },
-      { collections:    { $regex: escapeRegex(normalizedQuery), $options: "i" } }
-    ]
-  });
-}
+      // 🔥 NORMAL SEARCH
+      searchConditions.push({
+        $or: [
+          { title: { $regex: escapeRegex(normalizedQuery), $options: "i" } },
+          { vendor: { $regex: escapeRegex(normalizedQuery), $options: "i" } },
+          { productType: { $regex: escapeRegex(normalizedQuery), $options: "i" } },
+          { searchableText: { $regex: escapeRegex(normalizedQuery), $options: "i" } },
+          { tags: { $regex: escapeRegex(normalizedQuery), $options: "i" } },
+          { collections: { $regex: escapeRegex(normalizedQuery), $options: "i" } }
+        ]
+      });
+    }
 
     // =========================
     // 🔥 SEARCH PRODUCTS
@@ -401,11 +401,12 @@ if (detectedVendor) {
         $and: searchConditions
       })
         .sort({
-          shopifyPublishedAt: -1,
+          firstPublishedAt: -1,
           shopifyCreatedAt: -1
         })
         .limit(300)
         .lean()
+        
         .select(`
       title
       handle
@@ -415,6 +416,7 @@ if (detectedVendor) {
       createdAt
       shopifyCreatedAt
       shopifyPublishedAt
+      firstPublishedAt
       shopifyUpdatedAt
       collections
       searchableText
@@ -430,7 +432,7 @@ if (detectedVendor) {
       products.length < 50 &&
       detectedVendor
     ) {
-       const fallbackProducts =
+      const fallbackProducts =
         await Product.find({
           store: cleanStore,
           status: "ACTIVE",
@@ -457,15 +459,6 @@ if (detectedVendor) {
         }
       });
     }
-
-     // Debugging: Check product dates
-    console.log("DATE CHECK:", products.slice(0, 5).map(p => ({
-      title: p.title,
-      publishedAt: p.shopifyPublishedAt,
-      shopifyCreatedAt: p.shopifyCreatedAt,
-      shopifyUpdatedAt: p.shopifyUpdatedAt,
-      createdAt: p.createdAt
-    })));
 
     // =========================
     // 🔥 FORMAT + SCORE PRODUCTS
@@ -663,10 +656,7 @@ if (detectedVendor) {
       // RECENCY BOOST 🔥
       // ======================
 
-      const productDate =
-
-        p.shopifyPublishedAt ||
-        p.shopifyCreatedAt
+      const productDate = p.firstPublishedAt || p.shopifyCreatedAt;
 
       const created =
         productDate
@@ -707,18 +697,12 @@ if (detectedVendor) {
     // =========================
 
     products.sort((a, b) => {
+      const da = new Date(a.firstPublishedAt || a.shopifyCreatedAt || 0).getTime();
+      const db = new Date(b.firstPublishedAt || b.shopifyCreatedAt || 0).getTime();
 
-      // SCORE FIRST
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
-
-      // THEN PUBLISHED DATE
-      return (
-        new Date(b.shopifyPublishedAt || b.shopifyCreatedAt || 0) -
-        new Date(a.shopifyPublishedAt || a.shopifyCreatedAt || 0)
-      );
-
+      // first-publish ke hisaab se newest upar
+      if (db !== da) return db - da;
+      return b.score - a.score;
     });
 
     // =========================
@@ -930,7 +914,7 @@ if (detectedVendor) {
 
         })
           .sort({
-            shopifyPublishedAt: -1,
+            firstPublishedAt: -1,
             shopifyCreatedAt: -1
           })
           .limit(50)

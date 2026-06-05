@@ -379,6 +379,13 @@ query getProducts($cursor: String) {
                       ? new Date(p.updatedAt)
                       : null,
                   searchableText
+                },
+                // 🔑 sirf pehli dafa (insert) set hoga, re-publish pe kabhi nahi
+                $setOnInsert: {
+                  firstPublishedAt:
+                    p.publishedAt
+                      ? new Date(p.publishedAt)
+                      : null
                 }
               },
 
@@ -448,14 +455,21 @@ query getProducts($cursor: String) {
       totalSynced === allProductIds.size
     ) {
 
-      await Product.deleteMany({
-        store: shop
-          .trim()
-          .toLowerCase(),
-        productId: {
-          $nin: Array.from(allProductIds)
+      // ❌ delete nahi karte — warna draft hone par row ud jaye aur
+      // firstPublishedAt khatam ho jaye. Sirf UNPUBLISHED mark karte hain.
+      await Product.updateMany(
+        {
+          store: shop.trim().toLowerCase(),
+          productId: { $nin: Array.from(allProductIds) }
+        },
+        {
+          $set: {
+            status: "UNPUBLISHED",
+            publishedAt: null,
+            shopifyPublishedAt: null
+          }
         }
-      });
+      );
 
     }
 
@@ -892,5 +906,19 @@ router.post("/sync-collections", async (req, res) => {
   }
 }
 );
+
+
+// ⚠️ TEMPORARY — ek dafa chala kar HATA dena
+router.get("/backfill-first-published", async (req, res) => {
+  try {
+    const result = await Product.updateMany(
+      { firstPublishedAt: null, shopifyPublishedAt: { $ne: null } },
+      [ { $set: { firstPublishedAt: "$shopifyPublishedAt" } } ]
+    );
+    res.json({ success: true, updated: result.modifiedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
