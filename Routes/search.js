@@ -819,13 +819,35 @@ router.get("/search", async (req, res) => {
 
       ...new Set(
 
-        products.flatMap(
-          p => p.collections || []
-        )
+        products.flatMap(p => {
+
+          if (!Array.isArray(p.collections)) {
+            return [];
+          }
+
+          return p.collections.map(id =>
+
+            String(id)
+              .replace(
+                "gid://shopify/Collection/",
+                ""
+              )
+
+          );
+
+        })
 
       )
 
     ];
+
+    // Debug
+    console.log(
+      "FIRST PRODUCT COLLECTION:",
+      products.find(
+        p => p.collections?.length
+      )?.collections?.[0]
+    );
 
     // =========================
     // 🔥 SMART VENDORS
@@ -979,29 +1001,41 @@ router.get("/search", async (req, res) => {
     });
     if (detectedVendor) {
 
-  vendorResults = [
+      vendorResults = [
 
-    {
-      title: detectedVendor,
-      type: "vendor",
-      score: 999999,
-      latestDate: new Date()
-    },
+        {
+          title: detectedVendor,
+          type: "vendor",
+          score: 999999,
+          latestDate: new Date()
+        },
 
-    ...vendorResults.filter(
-      v =>
-        v.title.toLowerCase() !==
-        detectedVendor.toLowerCase()
-    )
+        ...vendorResults.filter(
+          v =>
+            v.title.toLowerCase() !==
+            detectedVendor.toLowerCase()
+        )
 
-  ];
+      ];
 
-}
+    }
 
     // =========================
     // 🔥 COLLECTIONS
     // =========================
     let collections = [];
+
+
+    // Debug
+    const sampleCollection =
+      await Collection.findOne({
+        store: cleanStore
+      }).lean();
+
+    console.log(
+      "FIRST DB COLLECTION:",
+      sampleCollection?.collectionId
+    );
 
     if (collectionIds.length) {
 
@@ -1011,7 +1045,9 @@ router.get("/search", async (req, res) => {
           store: cleanStore,
 
           collectionId: {
-            $in: collectionIds
+            $in: collectionIds.map(
+              id => String(id)
+            )
           }
 
         })
@@ -1025,6 +1061,54 @@ router.get("/search", async (req, res) => {
     }
 
     // =========================
+    // VENDOR COLLECTION FALLBACK
+    // When vendor detected but collections
+    // empty (p.collections unpopulated or
+    // ID format mismatch in DB)
+    // =========================
+
+    if (collections.length === 0 && detectedVendor) {
+
+      collections = await Collection.find({
+
+        store: cleanStore,
+
+        $or: [
+
+          {
+            vendor: {
+              $regex: detectedVendor,
+              $options: "i"
+            }
+          },
+
+          {
+            searchableText: {
+              $regex: detectedVendor,
+              $options: "i"
+            }
+          },
+
+          {
+            title: {
+              $regex: detectedVendor,
+              $options: "i"
+            }
+          }
+
+        ]
+
+      })
+        .sort({
+          shopifyPublishedAt: -1,
+          shopifyCreatedAt: -1
+        })
+        .limit(20)
+        .lean();
+
+    }
+
+    // =========================
     // 🔥 SMART COLLECTIONS
     // =========================
 
@@ -1034,15 +1118,23 @@ router.get("/search", async (req, res) => {
 
         // RELATED PRODUCTS
         const relatedProducts =
-  products.filter(p =>
+          products.filter(p =>
 
-    Array.isArray(p.collections) &&
+            Array.isArray(p.collections) &&
 
-    p.collections.includes(
-      c.collectionId
-    )
+            p.collections.some(id =>
 
-  );
+              String(id)
+                .replace(
+                  "gid://shopify/Collection/",
+                  ""
+                ) ===
+
+              String(c.collectionId)
+
+            )
+
+          );
         // LATEST PRODUCT
         const latestProduct =
 
@@ -1178,15 +1270,15 @@ router.get("/search", async (req, res) => {
     });
 
     // =========================
-// HIDE RANDOM COLLECTIONS
-// =========================
+    // HIDE RANDOM COLLECTIONS
+    // =========================
 
-if (
-  products.length === 0 &&
-  !detectedVendor
-) {
-  collections = [];
-}
+    if (
+      products.length === 0 &&
+      !detectedVendor
+    ) {
+      collections = [];
+    }
 
     // =========================
     // 🔥 FORMAT COLLECTIONS
