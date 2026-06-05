@@ -252,7 +252,7 @@ router.get("/search", async (req, res) => {
                 vt
               );
 
-            if (sim > 0.75) {
+            if (sim > 0.60) {
               score += sim * 20000;
             }
 
@@ -289,7 +289,7 @@ router.get("/search", async (req, res) => {
 
     if (
       vendorMatches.length &&
-      vendorMatches[0].score > 15000
+      vendorMatches[0].score > 10000
     ) {
       detectedVendor =
         vendorMatches[0].vendor;
@@ -513,7 +513,7 @@ router.get("/search", async (req, res) => {
     // =========================
 
     if (
-      products.length < 20 &&
+      products.length < 50 &&
       detectedVendor
     ) {
       const fallbackProducts =
@@ -575,7 +575,7 @@ router.get("/search", async (req, res) => {
               tt
             );
 
-          if (sim > 0.75) {
+          if (sim > 0.65) {
             score += sim * 15000;
           }
 
@@ -812,6 +812,22 @@ router.get("/search", async (req, res) => {
     });
 
     // =========================
+    // 🔥 COLLECTION IDS
+    // =========================
+
+    const collectionIds = [
+
+      ...new Set(
+
+        products.flatMap(
+          p => p.collections || []
+        )
+
+      )
+
+    ];
+
+    // =========================
     // 🔥 SMART VENDORS
     // =========================
 
@@ -961,44 +977,52 @@ router.get("/search", async (req, res) => {
       );
 
     });
+    if (detectedVendor) {
+
+  vendorResults = [
+
+    {
+      title: detectedVendor,
+      type: "vendor",
+      score: 999999,
+      latestDate: new Date()
+    },
+
+    ...vendorResults.filter(
+      v =>
+        v.title.toLowerCase() !==
+        detectedVendor.toLowerCase()
+    )
+
+  ];
+
+}
 
     // =========================
     // 🔥 COLLECTIONS
     // =========================
-    let collectionQuery = {
-      store: cleanStore
-    };
+    let collections = [];
 
-    // =========================
-    // =========================
-    // VENDOR COLLECTIONS
-    // =========================
+    if (collectionIds.length) {
 
-    if (detectedVendor) {
+      collections =
+        await Collection.find({
 
-      collectionQuery = {
-        store: cleanStore,
-        vendor: {
-          $regex: `^${escapeRegex(detectedVendor)}$`,
-          $options: "i"
-        }
-      };
+          store: cleanStore,
+
+          collectionId: {
+            $in: collectionIds
+          }
+
+        })
+          .sort({
+            shopifyPublishedAt: -1,
+            shopifyCreatedAt: -1
+          })
+          .limit(20)
+          .lean();
 
     }
-
-    let collections =
-      await Collection.find(
-        collectionQuery
-      )
-
-        .sort({
-          shopifyPublishedAt: -1,
-          shopifyCreatedAt: -1
-        })
-
-        .limit(20)
-
-        .lean();
 
     // =========================
     // 🔥 SMART COLLECTIONS
@@ -1010,43 +1034,15 @@ router.get("/search", async (req, res) => {
 
         // RELATED PRODUCTS
         const relatedProducts =
+  products.filter(p =>
 
-          products.filter(p => {
+    Array.isArray(p.collections) &&
 
-            const productCollections =
+    p.collections.includes(
+      c.collectionId
+    )
 
-              Array.isArray(
-                p.collections
-              )
-
-                ? p.collections
-                  .join(" ")
-                  .toLowerCase()
-
-                : (
-                  p.collections || ""
-                )
-                  .toString()
-                  .toLowerCase();
-
-            const collectionTitle =
-              (
-                c.title || ""
-              ).toLowerCase();
-
-            const collectionTokens =
-              collectionTitle
-                .split(" ")
-                .filter(Boolean);
-
-            return collectionTokens.some(
-              token =>
-                productCollections.includes(
-                  token
-                )
-            );
-
-          });
+  );
         // LATEST PRODUCT
         const latestProduct =
 
@@ -1180,6 +1176,17 @@ router.get("/search", async (req, res) => {
       );
 
     });
+
+    // =========================
+// HIDE RANDOM COLLECTIONS
+// =========================
+
+if (
+  products.length === 0 &&
+  !detectedVendor
+) {
+  collections = [];
+}
 
     // =========================
     // 🔥 FORMAT COLLECTIONS
