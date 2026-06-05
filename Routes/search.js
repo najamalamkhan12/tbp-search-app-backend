@@ -1037,6 +1037,32 @@ router.get("/search", async (req, res) => {
       sampleCollection?.collectionId
     );
 
+    console.log(
+  "COLLECTION IDS COUNT:",
+  collectionIds.length
+);
+
+console.log(
+  "COLLECTION IDS SAMPLE:",
+  collectionIds.slice(0, 20)
+);
+
+    const matchingSample =
+  await Collection.findOne({
+    store: cleanStore,
+    collectionId: collectionIds[0]
+  }).lean();
+
+console.log(
+  "MATCHING SAMPLE:",
+  matchingSample?.collectionId
+);
+
+console.log(
+  "MATCH SAMPLE:",
+  matchingCollections.slice(0, 5)
+);
+
     if (collectionIds.length) {
 
       collections =
@@ -1057,6 +1083,17 @@ router.get("/search", async (req, res) => {
           })
           .limit(20)
           .lean();
+          console.log(
+  "FOUND COLLECTIONS:",
+  collections.length
+);
+
+console.log(
+  "FOUND COLLECTION IDS:",
+  collections
+    .slice(0, 10)
+    .map(c => c.collectionId)
+);
 
     }
 
