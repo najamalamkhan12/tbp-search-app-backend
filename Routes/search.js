@@ -8,6 +8,7 @@ const Boost = require("../Models/boostModel");
 const Product = require("../Models/productModel")
 const Collection = require("../Models/collectionModel");
 const FeaturedBrand = require("../Models/featuredBrandsModel");
+const stringSimilarity = require("string-similarity");
 
 const normalizeDomain = (domain) =>
   (domain || "")
@@ -66,7 +67,7 @@ router.get("/search", async (req, res) => {
     const originalQuery =
       q.toLowerCase();
 
-    if (!q || !shop) {
+    if (!shop) {
 
       return res.json({
         query: q,
@@ -76,6 +77,34 @@ router.get("/search", async (req, res) => {
         products: [],
         suggestions: []
       });
+
+    }
+
+    if (!q) {
+
+      const latestProducts =
+        await Product.find({
+          store: cleanStore,
+          status: "ACTIVE"
+        })
+          .sort({
+            shopifyPublishedAt: -1,
+            shopifyCreatedAt: -1
+          })
+          .limit(20)
+          .lean();
+
+      return res.json({
+        query: "",
+        meta: {
+          emptySearch: true
+        },
+        vendors: [],
+        collections: [],
+        products: latestProducts,
+        suggestions: []
+      });
+
     }
 
     // =========================
@@ -206,6 +235,31 @@ router.get("/search", async (req, res) => {
           score += 20000;
         }
 
+        // TYPO TOLERANCE
+        const queryTokens =
+          normalizedQuery.split(" ");
+
+        const vendorTokens =
+          vendorName.split(" ");
+
+        queryTokens.forEach(qt => {
+
+          vendorTokens.forEach(vt => {
+
+            const sim =
+              stringSimilarity.compareTwoStrings(
+                qt,
+                vt
+              );
+
+            if (sim > 0.75) {
+              score += sim * 20000;
+            }
+
+          });
+
+        });
+
         // TOKEN MATCHES
         normalizedQuery
           .split(" ")
@@ -234,7 +288,8 @@ router.get("/search", async (req, res) => {
       );
 
     if (
-      vendorMatches.length
+      vendorMatches.length &&
+      vendorMatches[0].score > 15000
     ) {
       detectedVendor =
         vendorMatches[0].vendor;
@@ -244,19 +299,36 @@ router.get("/search", async (req, res) => {
     // 🔥 REMAINING QUERY
     // =========================
 
-    let remainingQuery = "";
+    let remainingQuery = normalizedQuery;
 
     if (detectedVendor) {
 
-      remainingQuery =
+      const vendorTokens =
+        detectedVendor
+          .toLowerCase()
+          .split(" ");
+
+      const queryTokens =
         normalizedQuery
+          .split(" ");
 
-          .replace(
-            detectedVendor.toLowerCase(),
-            ""
-          )
+      remainingQuery =
+        queryTokens
+          .filter(qt => {
 
+            return !vendorTokens.some(vt =>
+
+              stringSimilarity.compareTwoStrings(
+                qt,
+                vt
+              ) > 0.75
+
+            );
+
+          })
+          .join(" ")
           .trim();
+
     }
 
     // =========================
@@ -274,18 +346,6 @@ router.get("/search", async (req, res) => {
         .map(t =>
           t.toLowerCase()
         );
-
-    // =========================
-    // 🔥 TOKENIZE QUERY
-    // =========================
-    const tokens =
-      normalizedQuery
-
-        .split(" ")
-
-        .map(t => t.trim())
-
-        .filter(Boolean);
 
     // =========================
     // 🔥 SMART SEARCH CONDITIONS
@@ -419,6 +479,7 @@ router.get("/search", async (req, res) => {
     // =========================
     // 🔥 SEARCH PRODUCTS
     // =========================
+
     let products =
       await Product.find({
         store: cleanStore,
@@ -430,23 +491,58 @@ router.get("/search", async (req, res) => {
           shopifyCreatedAt: -1
         })
         .limit(300)
-
         .lean()
         .select(`
-          title
-          handle
-          vendor
-          image
-          price
-          createdAt
-          shopifyCreatedAt
-          shopifyPublishedAt
-          shopifyUpdatedAt
-          collections
-          searchableText
-          tags
-          status
-        `)
+      title
+      handle
+      vendor
+      image
+      price
+      createdAt
+      shopifyCreatedAt
+      shopifyPublishedAt
+      shopifyUpdatedAt
+      collections
+      searchableText
+      tags
+      status
+    `);
+
+    // =========================
+    // FALLBACK TYPO SEARCH
+    // =========================
+
+    if (
+      products.length < 20 &&
+      detectedVendor
+    ) {
+      const fallbackProducts =
+        await Product.find({
+          store: cleanStore,
+          status: "ACTIVE",
+          vendor: {
+            $regex: detectedVendor,
+            $options: "i"
+          }
+        })
+          .limit(300)
+          .lean();
+      const existingIds =
+        new Set(
+          products.map(p =>
+            String(p._id)
+          )
+        );
+      fallbackProducts.forEach(p => {
+        if (
+          !existingIds.has(
+            String(p._id)
+          )
+        ) {
+          products.push(p);
+        }
+      });
+    }
 
     // =========================
     // 🔥 FORMAT + SCORE PRODUCTS
@@ -458,6 +554,46 @@ router.get("/search", async (req, res) => {
       const title =
         (p.title || "")
           .toLowerCase();
+
+      // ======================
+      // TITLE TYPO TOLERANCE
+      // ======================
+
+      const queryTokens =
+        normalizedQuery.split(" ");
+
+      const titleTokens =
+        title.split(/[\s\-|_/]+/);
+
+      queryTokens.forEach(qt => {
+
+        titleTokens.forEach(tt => {
+
+          const sim =
+            stringSimilarity.compareTwoStrings(
+              qt,
+              tt
+            );
+
+          if (sim > 0.75) {
+            score += sim * 15000;
+          }
+
+        });
+
+      });
+
+      // FULL TITLE SIMILARITY
+
+      const fullTitleSimilarity =
+        stringSimilarity.compareTwoStrings(
+          normalizedQuery,
+          title
+        );
+
+      if (fullTitleSimilarity > 0.4) {
+        score += fullTitleSimilarity * 50000;
+      }
 
       const vendor =
         (p.vendor || "")
@@ -834,36 +970,43 @@ router.get("/search", async (req, res) => {
     };
 
     // =========================
+    // =========================
     // VENDOR COLLECTIONS
     // =========================
 
     if (detectedVendor) {
 
-      collectionQuery.$or = [
+      if (remainingQuery) {
 
-        {
-          title: {
-            $regex:
-              normalizedQuery,
-            $options: "i"
-          }
-        },
+        collectionQuery = {
+          store: cleanStore,
+          $and: [
+            {
+              searchableText: {
+                $regex: detectedVendor,
+                $options: "i"
+              }
+            },
+            {
+              searchableText: {
+                $regex: remainingQuery,
+                $options: "i"
+              }
+            }
+          ]
+        };
 
-        {
-          handle: {
-            $regex:
-              normalizedQuery,
-            $options: "i"
-          }
-        },
+      } else {
 
-        {
+        collectionQuery = {
+          store: cleanStore,
           searchableText: {
-            $regex: normalizedQuery,
+            $regex: detectedVendor,
             $options: "i"
           }
-        },
-      ];
+        };
+
+      }
 
     } else {
 
@@ -871,23 +1014,21 @@ router.get("/search", async (req, res) => {
 
         {
           title: {
-            $regex:
-              normalizedQuery,
+            $regex: normalizedQuery,
             $options: "i"
           }
         },
 
         {
           handle: {
-            $regex:
-              normalizedQuery,
+            $regex: normalizedQuery,
             $options: "i"
           }
         },
+
         {
           searchableText: {
-            $regex:
-              normalizedQuery,
+            $regex: normalizedQuery,
             $options: "i"
           }
         }
@@ -988,6 +1129,21 @@ router.get("/search", async (req, res) => {
               acc + (p.score || 0),
             0
           );
+
+        if (detectedVendor) {
+
+          const vendorMatch =
+            (c.searchableText || "")
+              .toLowerCase()
+              .includes(
+                detectedVendor.toLowerCase()
+              );
+
+          if (vendorMatch) {
+            collectionScore += 100000;
+          }
+
+        }
 
         // ======================
         // NEW COLLECTION BOOST
