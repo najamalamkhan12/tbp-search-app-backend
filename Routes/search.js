@@ -841,14 +841,6 @@ router.get("/search", async (req, res) => {
 
     ];
 
-    // Debug
-    console.log(
-      "FIRST PRODUCT COLLECTION:",
-      products.find(
-        p => p.collections?.length
-      )?.collections?.[0]
-    );
-
     // =========================
     // 🔥 SMART VENDORS
     // =========================
@@ -1024,45 +1016,6 @@ router.get("/search", async (req, res) => {
     // 🔥 COLLECTIONS
     // =========================
     let collections = [];
-
-
-    // Debug
-    const sampleCollection =
-      await Collection.findOne({
-        store: cleanStore
-      }).lean();
-
-    console.log(
-      "FIRST DB COLLECTION:",
-      sampleCollection?.collectionId
-    );
-
-    console.log(
-  "COLLECTION IDS COUNT:",
-  collectionIds.length
-);
-
-console.log(
-  "COLLECTION IDS SAMPLE:",
-  collectionIds.slice(0, 20)
-);
-
-    const matchingSample =
-  await Collection.findOne({
-    store: cleanStore,
-    collectionId: collectionIds[0]
-  }).lean();
-
-console.log(
-  "MATCHING SAMPLE:",
-  matchingSample?.collectionId
-);
-
-console.log(
-  "MATCH SAMPLE:",
-  matchingCollections.slice(0, 5)
-);
-
     if (collectionIds.length) {
 
       collections =
@@ -1086,6 +1039,11 @@ console.log(
           console.log(
   "FOUND COLLECTIONS:",
   collections.length
+);
+
+console.log(
+  "FIRST FOUND COLLECTION:",
+  collections[0]?.title
 );
 
 console.log(
@@ -1153,6 +1111,12 @@ console.log(
 
       collections.map(c => {
 
+        console.log(
+  "COLLECTION:",
+  c.collectionId,
+  c.title
+);
+
         // RELATED PRODUCTS
         const relatedProducts =
           products.filter(p =>
@@ -1203,6 +1167,12 @@ console.log(
               acc + (p.score || 0),
             0
           );
+
+          console.log(
+  "RELATED PRODUCTS:",
+  c.collectionId,
+  relatedProducts.length
+);
 
         if (detectedVendor) {
 
@@ -1322,7 +1292,7 @@ console.log(
     // =========================
     const formattedCollections =
       collections
-        .filter(c => c.title && c.handle)
+        .filter(c => c.title)
         .slice(0, 5)
         .map(c => ({
 
