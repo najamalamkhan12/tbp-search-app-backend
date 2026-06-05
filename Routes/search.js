@@ -976,64 +976,13 @@ router.get("/search", async (req, res) => {
 
     if (detectedVendor) {
 
-      if (remainingQuery) {
-
-        collectionQuery = {
-          store: cleanStore,
-          $and: [
-            {
-              searchableText: {
-                $regex: detectedVendor,
-                $options: "i"
-              }
-            },
-            {
-              searchableText: {
-                $regex: remainingQuery,
-                $options: "i"
-              }
-            }
-          ]
-        };
-
-      } else {
-
-        collectionQuery = {
-          store: cleanStore,
-          searchableText: {
-            $regex: detectedVendor,
-            $options: "i"
-          }
-        };
-
-      }
-
-    } else {
-
-      collectionQuery.$or = [
-
-        {
-          title: {
-            $regex: normalizedQuery,
-            $options: "i"
-          }
-        },
-
-        {
-          handle: {
-            $regex: normalizedQuery,
-            $options: "i"
-          }
-        },
-
-        {
-          searchableText: {
-            $regex: normalizedQuery,
-            $options: "i"
-          }
+      collectionQuery = {
+        store: cleanStore,
+        vendor: {
+          $regex: `^${escapeRegex(detectedVendor)}$`,
+          $options: "i"
         }
-
-      ];
+      };
 
     }
 
