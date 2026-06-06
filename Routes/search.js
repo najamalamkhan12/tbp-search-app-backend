@@ -22,6 +22,39 @@ const escapeRegex = (value) =>
 const normalizeId = (id) =>
   String(id || "").replace("gid://shopify/Collection/", "").trim();
 
+const toTime = (value) => {
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+};
+
+const latestProductTime = (product = {}) =>
+  // Republish should not make an old product fresh again.
+  toTime(product.firstPublishedAt) ||
+  toTime(product.shopifyCreatedAt);
+
+const latestCollectionTime = (collection = {}) =>
+  // Republish/update should not make an old collection fresh again.
+  toTime(collection.firstPublishedAt) ||
+  toTime(collection.shopifyCreatedAt);
+
+const daysSinceTime = (time) =>
+  time
+    ? (Date.now() - time) / (1000 * 60 * 60 * 24)
+    : 9999;
+
+const recencyScore = (time, weights = {}) => {
+  const daysOld = daysSinceTime(time);
+
+  if (daysOld <= 1) return weights.day1 ?? 45000;
+  if (daysOld <= 3) return weights.day3 ?? 35000;
+  if (daysOld <= 7) return weights.day7 ?? 25000;
+  if (daysOld <= 30) return weights.day30 ?? 12000;
+  if (daysOld <= 90) return weights.day90 ?? 4000;
+  if (daysOld <= 180) return weights.day180 ?? 1000;
+
+  return 0;
+};
+
 // POST /api/stores/add
 
 router.post("/stores/add", async (req, res) => {
@@ -440,7 +473,10 @@ router.get("/search", async (req, res) => {
             $regex: escapeRegex(detectedVendor),
             $options: "i"
           }
-        }).sort({ firstPublishedAt: -1, shopifyCreatedAt: -1 })
+        }).sort({
+          firstPublishedAt: -1,
+          shopifyCreatedAt: -1
+        })
           .limit(300)
           .lean();
       const existingIds =
@@ -482,7 +518,10 @@ router.get("/search", async (req, res) => {
           store: cleanStore,
           status: "ACTIVE"
         })
-          .sort({ firstPublishedAt: -1, shopifyCreatedAt: -1 })
+          .sort({
+            firstPublishedAt: -1,
+            shopifyCreatedAt: -1
+          })
           .limit(2000)
           .lean()
           .select(`
@@ -717,35 +756,20 @@ router.get("/search", async (req, res) => {
       // RECENCY BOOST 🔥
       // ======================
 
-      const productDate = p.firstPublishedAt || p.shopifyCreatedAt;
+      const productTime =
+        latestProductTime(p);
 
-      const created =
-        productDate
-          ? new Date(productDate)
-          : null;
-
-      const daysOld =
-        created
-          ? (
-            Date.now() -
-            created.getTime()
-          ) /
-          (1000 * 60 * 60 * 24)
-          : 9999;
-
-      // 2026 / NEWEST PRODUCTS
-      // VERY NEW
-      if (daysOld <= 1) {
-        score += 120000;
-      } else if (daysOld <= 3) {
-        score += 80000;
-      } else if (daysOld <= 7) {
-        score += 50000;
-      } else if (daysOld <= 30) {
-        score += 20000;
-      } else if (daysOld <= 90) {
-        score += 5000;
-      }
+      score += recencyScore(
+        productTime,
+        {
+          day1: 55000,
+          day3: 42000,
+          day7: 30000,
+          day30: 15000,
+          day90: 5000,
+          day180: 1000
+        }
+      );
 
       // ======================
       // KEYWORD MATCH (typo tolerant) — prioritize ke liye
@@ -773,6 +797,11 @@ router.get("/search", async (req, res) => {
       return {
         ...p,
         keywordHits,
+        latestTime: productTime,
+        latestDate:
+          productTime
+            ? new Date(productTime)
+            : null,
         score
       };
     });
@@ -802,21 +831,10 @@ router.get("/search", async (req, res) => {
         return b.score - a.score;
       }
 
-      const da =
-        new Date(
-          a.firstPublishedAt ||
-          a.shopifyCreatedAt ||
-          0
-        ).getTime();
-
-      const db =
-        new Date(
-          b.firstPublishedAt ||
-          b.shopifyCreatedAt ||
-          0
-        ).getTime();
-
-      return db - da;
+      return (
+        (b.latestTime || latestProductTime(b)) -
+        (a.latestTime || latestProductTime(a))
+      );
 
     });
     // =========================
@@ -903,24 +921,8 @@ router.get("/search", async (req, res) => {
           const latestProduct =
 
             [...vendorProducts].sort((a, b) =>
-
-              new Date(
-
-                b.shopifyPublishedAt ||
-                b.shopifyCreatedAt ||
-                b.createdAt ||
-                0
-
-              ) -
-
-              new Date(
-
-                a.shopifyPublishedAt ||
-                a.shopifyCreatedAt ||
-                a.createdAt ||
-                0
-
-              )
+              latestProductTime(b) -
+              latestProductTime(a)
 
             )[0];
 
@@ -933,20 +935,9 @@ router.get("/search", async (req, res) => {
               "vendor",
 
             latestDate:
-
               latestProduct
-                ?.firstPublishedAt ||
-
-              latestProduct
-                ?.shopifyPublishedAt ||
-
-              latestProduct
-                ?.shopifyCreatedAt ||
-
-              latestProduct
-                ?.createdAt ||
-
-              0,
+                ? new Date(latestProductTime(latestProduct))
+                : null,
 
             score:
 
@@ -1034,6 +1025,7 @@ router.get("/search", async (req, res) => {
 
         })
           .sort({
+            firstPublishedAt: -1,
             shopifyCreatedAt: -1
           })
           .limit(50)
@@ -1089,35 +1081,30 @@ router.get("/search", async (req, res) => {
           );
         // LATEST PRODUCT
         const latestProduct =
-
           [...relatedProducts].sort((a, b) =>
-
-            new Date(
-
-              b.shopifyPublishedAt ||
-              b.shopifyCreatedAt ||
-              b.createdAt ||
-
-              0
-
-            ) -
-
-            new Date(
-              a.shopifyPublishedAt ||
-              a.shopifyCreatedAt ||
-              a.createdAt ||
-              0
-            )
-
+            latestProductTime(b) -
+            latestProductTime(a)
           )[0];
 
-        let collectionScore =
+        const topProductScore =
+          relatedProducts.length
+            ? Math.max(
+              ...relatedProducts.map(p => p.score || 0)
+            )
+            : 0;
 
-          relatedProducts.reduce(
-            (acc, p) =>
-              acc + (p.score || 0),
-            0
-          );
+        const averageProductScore =
+          relatedProducts.length
+            ? relatedProducts.reduce(
+              (acc, p) => acc + (p.score || 0),
+              0
+            ) / relatedProducts.length
+            : 0;
+
+        let collectionScore =
+          Math.min(topProductScore * 0.45, 90000) +
+          Math.min(averageProductScore * 0.25, 45000) +
+          Math.min(relatedProducts.length * 2500, 20000);
 
         const title = (c.title || "").toLowerCase();
 
@@ -1125,7 +1112,7 @@ router.get("/search", async (req, res) => {
           detectedVendor ? title.includes(detectedVendor.toLowerCase()) : false;
 
         if (titleVendorMatch) {
-          collectionScore += 200000;
+          collectionScore += 60000;
         }
 
         if (detectedVendor) {
@@ -1138,48 +1125,88 @@ router.get("/search", async (req, res) => {
               );
 
           if (vendorMatch) {
-            collectionScore += 100000;
+            collectionScore += 35000;
           }
 
         }
+
+        if (normalizedQuery && title === normalizedQuery) {
+          collectionScore += 90000;
+        } else if (
+          normalizedQuery &&
+          title.includes(normalizedQuery)
+        ) {
+          collectionScore += 45000;
+        }
+
+        remainingTokens.forEach(token => {
+          if (!token) return;
+          if (title.includes(token)) {
+            collectionScore += 18000;
+          }
+          if (
+            (c.searchableText || "")
+              .toLowerCase()
+              .includes(token)
+          ) {
+            collectionScore += 7000;
+          }
+        });
 
         // ======================
         // NEW COLLECTION BOOST
         // ======================
 
-        const collectionDate =
-          new Date(
-            c.firstPublishedAt ||
-            c.shopifyCreatedAt ||
-            c.createdAt ||
-            0
+        const collectionTime =
+          latestCollectionTime(c);
+
+        const latestProductTimeValue =
+          latestProduct
+            ? latestProductTime(latestProduct)
+            : 0;
+
+        const newestRelatedTime =
+          Math.max(
+            collectionTime,
+            latestProductTimeValue
           );
 
-        const collectionDaysOld =
+        collectionScore += recencyScore(
+          collectionTime,
+          {
+            day1: 45000,
+            day3: 35000,
+            day7: 25000,
+            day30: 14000,
+            day90: 5000,
+            day180: 1000
+          }
+        );
 
-          (
-            Date.now() -
-            collectionDate.getTime()
-          ) /
+        collectionScore += recencyScore(
+          latestProductTimeValue,
+          {
+            day1: 35000,
+            day3: 28000,
+            day7: 20000,
+            day30: 10000,
+            day90: 3500,
+            day180: 800
+          }
+        );
 
-          (1000 * 60 * 60 * 24);
+        if (c.productsCount) {
+          collectionScore += Math.min(
+            Number(c.productsCount || 0) * 250,
+            12000
+          );
+        }
 
-        if (collectionDaysOld <= 7) {
-
-          collectionScore += 50000;
-
-        } else if (
-          collectionDaysOld <= 30
+        if (
+          newestRelatedTime &&
+          daysSinceTime(newestRelatedTime) > 365
         ) {
-
-          collectionScore += 25000;
-
-        } else if (
-          collectionDaysOld <= 90
-        ) {
-
-          collectionScore += 10000;
-
+          collectionScore -= 25000;
         }
 
         return {
@@ -1189,14 +1216,11 @@ router.get("/search", async (req, res) => {
           titleVendorMatch,
 
           latestDate:
-            latestProduct?.firstPublishedAt ||
-            latestProduct?.shopifyPublishedAt ||
-            latestProduct?.shopifyCreatedAt ||
-            latestProduct?.createdAt ||
-            c.firstPublishedAt ||
-            c.shopifyCreatedAt ||
-            c.createdAt ||
-            0,
+            newestRelatedTime
+              ? new Date(newestRelatedTime)
+              : null,
+          latestTime:
+            newestRelatedTime,
           score: collectionScore
         };
 
@@ -1228,21 +1252,15 @@ router.get("/search", async (req, res) => {
         return a.titleVendorMatch ? -1 : 1;
       }
 
-      // phir NEWEST collection pehle (collection ki apni creation date)
-      const da = new Date(
-        a.shopifyCreatedAt || a.shopifyPublishedAt || 0
-      ).getTime();
-
-      const db = new Date(
-        b.shopifyCreatedAt || b.shopifyPublishedAt || 0
-      ).getTime();
-
-      if (db !== da) {
-        return db - da;
+      if ((b.score || 0) !== (a.score || 0)) {
+        return (b.score || 0) - (a.score || 0);
       }
 
-      // sirf tiebreak ke liye relevance score
-      return (b.score || 0) - (a.score || 0);
+      if ((b.latestTime || 0) !== (a.latestTime || 0)) {
+        return (b.latestTime || 0) - (a.latestTime || 0);
+      }
+
+      return Number(b.productsCount || 0) - Number(a.productsCount || 0);
     });
 
     // =========================
@@ -1639,6 +1657,41 @@ router.get("/trending-brands", async (req, res) => {
 
         );
 
+    const productIds =
+      products.map(p => p.id).filter(Boolean);
+
+    const productFreshnessDocs =
+      productIds.length
+        ? await Product.find({
+          store: cleanStore,
+          productId: { $in: productIds }
+        })
+          .select("productId firstPublishedAt shopifyCreatedAt")
+          .lean()
+        : [];
+
+    const productFreshnessMap = {};
+
+    productFreshnessDocs.forEach(p => {
+      productFreshnessMap[String(p.productId)] = p;
+    });
+
+    products.forEach(p => {
+      const dbProduct =
+        productFreshnessMap[String(p.id)];
+
+      p.firstPublishedAt =
+        dbProduct?.firstPublishedAt || null;
+
+      p.shopifyCreatedAt =
+        dbProduct?.shopifyCreatedAt ||
+        p.createdAt ||
+        null;
+
+      p.stableTime =
+        latestProductTime(p);
+    });
+
     // =========================
     // GROUP BRANDS
     // =========================
@@ -1684,8 +1737,8 @@ router.get("/trending-brands", async (req, res) => {
 
             .sort((a, b) =>
 
-              b.timestamp -
-              a.timestamp
+              (b.stableTime || 0) -
+              (a.stableTime || 0)
 
             )[0];
 
@@ -1694,9 +1747,12 @@ router.get("/trending-brands", async (req, res) => {
         // =========================
 
         brand.latestDate =
-          latestProduct?.publishedAt ||
-          latestProduct?.createdAt ||
-          null;
+          latestProduct?.stableTime
+            ? new Date(latestProduct.stableTime)
+            : null;
+
+        brand.latestTime =
+          latestProduct?.stableTime || 0;
 
         // =========================
         // BASE SCORE
@@ -1720,11 +1776,11 @@ router.get("/trending-brands", async (req, res) => {
 
         if (analyticsBrand) {
 
-          brand.score +=
-            analyticsBrand.searches * 120;
-
-          brand.score +=
-            analyticsBrand.clicks * 250;
+          brand.score += Math.min(
+            (analyticsBrand.searches || 0) * 80 +
+            (analyticsBrand.clicks || 0) * 200,
+            12000
+          );
 
         }
 
@@ -1732,30 +1788,32 @@ router.get("/trending-brands", async (req, res) => {
         // RECENCY BOOST
         // =========================
 
-        if (latestProduct?.publishedAt || latestProduct?.createdAt) {
+        if (latestProduct?.stableTime) {
 
           const latestDate =
-            latestProduct.publishedAt ||
-            latestProduct.createdAt ||
-            latestProduct.shopifyCreatedAt;
+            latestProduct.stableTime;
 
           const daysOld =
             (
               Date.now() -
-              new Date(latestDate).getTime()
+              latestDate
             ) /
             (1000 * 60 * 60 * 24);
 
           if (daysOld <= 1) {
-            brand.score += 20000;
+            brand.score += 45000;
           } else if (daysOld <= 3) {
-            brand.score += 15000;
+            brand.score += 35000;
           } else if (daysOld <= 7) {
-            brand.score += 10000;
+            brand.score += 25000;
           } else if (daysOld <= 30) {
-            brand.score += 5000;
+            brand.score += 12000;
           } else if (daysOld <= 90) {
-            brand.score += 1000;
+            brand.score += 4000;
+          } else if (daysOld > 365) {
+            brand.score -= 15000;
+          } else if (daysOld > 180) {
+            brand.score -= 6000;
           }
         }
         // =========================
@@ -1771,8 +1829,8 @@ router.get("/trending-brands", async (req, res) => {
         if (featured) {
 
           brand.score +=
-            30000 +
-            (featured.priority || 0);
+            12000 +
+            Math.min(featured.priority || 0, 8000);
 
         }
 
@@ -1786,11 +1844,13 @@ router.get("/trending-brands", async (req, res) => {
 
       Object.values(brandMap)
 
-        .sort((a, b) =>
+        .sort((a, b) => {
+          if (b.score !== a.score) {
+            return b.score - a.score;
+          }
 
-          b.score - a.score
-
-        )
+          return (b.latestTime || 0) - (a.latestTime || 0);
+        })
 
         .slice(0, 10)
 
@@ -1820,8 +1880,8 @@ router.get("/trending-brands", async (req, res) => {
 
         .sort((a, b) =>
 
-          b.timestamp -
-          a.timestamp
+          (b.stableTime || 0) -
+          (a.stableTime || 0)
 
         )
 
@@ -2163,8 +2223,45 @@ router.get("/trending", async (req, res) => {
 
         });
 
+    const productIds =
+      products.map(p => p.id).filter(Boolean);
+
+    const productFreshnessDocs =
+      productIds.length
+        ? await Product.find({
+          store: cleanStore,
+          productId: { $in: productIds }
+        })
+          .select("productId firstPublishedAt shopifyCreatedAt")
+          .lean()
+        : [];
+
+    const productFreshnessMap = {};
+
+    productFreshnessDocs.forEach(p => {
+      productFreshnessMap[String(p.productId)] = p;
+    });
+
+    products.forEach(product => {
+      const dbProduct =
+        productFreshnessMap[String(product.id)];
+
+      product.firstPublishedAt =
+        dbProduct?.firstPublishedAt || null;
+
+      product.shopifyCreatedAt =
+        dbProduct?.shopifyCreatedAt ||
+        product.createdAt ||
+        null;
+
+      product.stableTime =
+        latestProductTime(product);
+    });
+
     products.sort(
-      (a, b) => b.timestamp - a.timestamp
+      (a, b) =>
+        (b.stableTime || 0) -
+        (a.stableTime || 0)
     );
 
     // =========================
@@ -2211,13 +2308,11 @@ router.get("/trending", async (req, res) => {
 
         if (analytics) {
 
-          // CLICK BOOST
-          score +=
-            (analytics.clicks || 0) * 3000;
-
-          // SEARCH BOOST
-          score +=
-            (analytics.searches || 0) * 1200;
+          score += Math.min(
+            (analytics.clicks || 0) * 2500 +
+            (analytics.searches || 0) * 1000,
+            120000
+          );
 
           // LOW ENGAGEMENT PENALTY
           if (
@@ -2238,7 +2333,7 @@ router.get("/trending", async (req, res) => {
         const daysOld =
           (
             Date.now() -
-            product.timestamp
+            (product.stableTime || 0)
           ) / (1000 * 60 * 60 * 24);
 
         if (daysOld <= 3) {
@@ -2261,6 +2356,10 @@ router.get("/trending", async (req, res) => {
 
           score += 30000;
 
+        } else if (daysOld > 365) {
+
+          score -= 30000;
+
         }
 
         return {
@@ -2279,9 +2378,13 @@ router.get("/trending", async (req, res) => {
     const trendingProducts =
       scoredProducts
 
-        .sort((a, b) =>
-          b.score - a.score
-        )
+        .sort((a, b) => {
+          if (b.score !== a.score) {
+            return b.score - a.score;
+          }
+
+          return (b.stableTime || 0) - (a.stableTime || 0);
+        })
 
         .slice(0, 12);
 
