@@ -483,7 +483,7 @@ router.get("/search", async (req, res) => {
           status: "ACTIVE"
         })
           .sort({ firstPublishedAt: -1, shopifyCreatedAt: -1 })
-          .limit(5000)
+          .limit(2000)
           .lean()
           .select(`
             title vendor handle image price
@@ -789,18 +789,35 @@ router.get("/search", async (req, res) => {
     // =========================
 
     products.sort((a, b) => {
-      // 1. zyada keyword match karne wale pehle (jab keyword/typo ho)
-      if (remainingTokens.length && b.keywordHits !== a.keywordHits) {
+
+      if (
+        remainingTokens.length &&
+        b.keywordHits !== a.keywordHits
+      ) {
         return b.keywordHits - a.keywordHits;
       }
 
-      // 2. phir newest first (first-publish)
-      const da = new Date(a.firstPublishedAt || a.shopifyCreatedAt || 0).getTime();
-      const db = new Date(b.firstPublishedAt || b.shopifyCreatedAt || 0).getTime();
-      if (db !== da) return db - da;
+      // relevance first
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
 
-      // 3. tie pe relevance score
-      return b.score - a.score;
+      const da =
+        new Date(
+          a.firstPublishedAt ||
+          a.shopifyCreatedAt ||
+          0
+        ).getTime();
+
+      const db =
+        new Date(
+          b.firstPublishedAt ||
+          b.shopifyCreatedAt ||
+          0
+        ).getTime();
+
+      return db - da;
+
     });
     // =========================
     // 🔥 COLLECTION IDS
@@ -916,6 +933,12 @@ router.get("/search", async (req, res) => {
               "vendor",
 
             latestDate:
+
+              latestProduct
+                ?.firstPublishedAt ||
+
+              latestProduct
+                ?.shopifyPublishedAt ||
 
               latestProduct
                 ?.shopifyCreatedAt ||
@@ -1125,8 +1148,8 @@ router.get("/search", async (req, res) => {
         // ======================
 
         const collectionDate =
-
           new Date(
+            c.firstPublishedAt ||
             c.shopifyCreatedAt ||
             c.createdAt ||
             0
@@ -1166,9 +1189,11 @@ router.get("/search", async (req, res) => {
           titleVendorMatch,
 
           latestDate:
+            latestProduct?.firstPublishedAt ||
             latestProduct?.shopifyPublishedAt ||
             latestProduct?.shopifyCreatedAt ||
             latestProduct?.createdAt ||
+            c.firstPublishedAt ||
             c.shopifyCreatedAt ||
             c.createdAt ||
             0,
@@ -2286,104 +2311,48 @@ router.get("/trending-collections", async (req, res) => {
       return res.json({ collections: [] });
     }
 
-    // LIVE FETCH FROM SHOPIFY (custom + smart)
-    const results = await Promise.all(
-      matchedStores.map(async (shopStore) => {
-        try {
-          const cleanDomain = shopStore.domain
-            .replace(/^https?:\/\//, "")
-            .replace(/\/$/, "");
-
-          const types = ["custom_collections", "smart_collections"];
-          const all = [];
-
-          for (const type of types) {
-            const response = await fetch(
-              `https://${cleanDomain}/admin/api/2026-04/${type}.json?limit=250`,
-              {
-                headers: {
-                  "X-Shopify-Access-Token": shopStore.accessToken,
-                  "Content-Type": "application/json"
-                }
-              }
-            );
-
-            if (!response.ok) {
-
-              console.log(
-                "SHOPIFY COLLECTION API ERROR:",
-                response.status,
-                type,
-                cleanDomain
-              );
-
-              continue;
-            }
-
-            const data = await response.json();
-            const list = Array.isArray(data[type]) ? data[type] : [];
-
-            list.forEach(c => {
-              all.push({
-                title: c.title || "",
-                handle: c.handle || "",
-                image: c.image?.src || "",
-                publishedAt: c.published_at || null,
-                productsCount: Number(c.products_count || 0),
-                timestamp: new Date(c.created_at || 0).getTime()
-              });
-            });
-          }
-
-          return all;
-        } catch (err) {
-          console.error(
-            "TRENDING COLLECTIONS FETCH ERROR:",
-            shopStore.domain,
-            err.message
-          );
-          return [];
-        }
+    // fetch latest 20 collections for the store, sort by firstPublishedAt desc
+    const collections = await Collection.find({
+      store: cleanStore
+    })
+      .sort({
+        firstPublishedAt: -1,
+        shopifyCreatedAt: -1
       })
-    );
+      .limit(20)
+      .lean();
 
-    // published + non-empty filter, phir latest (created) first
-    const collections = results
-      .flat()
-      .filter(c => c.handle)
-      .sort((a, b) => {
-        const scoreA =
-          a.productsCount * 100;
-        const scoreB =
-          b.productsCount * 100;
-        return scoreB - scoreA;
-      })
-      .slice(0, 10)
-      .map(c => ({
-        title: c.title,
-        handle: c.handle,
-        image: c.image
-      }));
-
-    // Debug log to verify collection data
-    console.log(
-      "RAW COLLECTIONS:",
-      results.flat().length
-    );
+    const formattedCollections =
+      collections
+        .filter(c =>
+          c.handle &&
+          c.title &&
+          c.title.trim() &&
+          c.title !== "."
+        )
+        .slice(0, 10)
+        .map(c => ({
+          title: c.title,
+          handle: c.handle,
+          image: c.image || ""
+        }));
 
     console.log(
-      "FINAL COLLECTIONS:",
+      "DB COLLECTIONS:",
       collections.length
     );
 
     console.log(
       "COLLECTION TITLES:",
-      collections.map(
+      formattedCollections.map(
         c => c.title
       )
     );
 
-    res.json({ collections });
+    return res.json({
+      collections: formattedCollections
+    });
+
   } catch (err) {
     console.error("TRENDING COLLECTIONS ERROR:", err);
     res.status(500).json({ collections: [] });

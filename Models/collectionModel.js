@@ -67,6 +67,11 @@ const collectionSchema =
             index: true
         },
 
+        firstPublishedAt: {
+            type: Date,
+            index: true
+        },
+
         searchableText: {
             type: String,
             default: ""
@@ -110,7 +115,11 @@ collectionSchema.index(
 
 collectionSchema.index({
     store: 1,
-    vendor: 1,
+    firstPublishedAt: -1
+});
+
+collectionSchema.index({
+    store: 1,
     shopifyPublishedAt: -1
 });
 
@@ -141,11 +150,6 @@ collectionSchema.index({
 collectionSchema.index({
     store: 1,
     productsCount: -1
-});
-
-collectionSchema.index({
-    store: 1,
-    shopifyPublishedAt: -1
 });
 
 // =====================================

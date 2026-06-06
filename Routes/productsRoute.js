@@ -812,6 +812,18 @@ router.post("/sync-collections", async (req, res) => {
 
                         searchableText
 
+                      },
+                      $setOnInsert: {
+
+                        firstPublishedAt:
+                          c.published_at
+                            ? new Date(c.published_at)
+                            : (
+                              c.created_at
+                                ? new Date(c.created_at)
+                                : null
+                            )
+
                       }
 
                     },
@@ -908,25 +920,41 @@ router.post("/sync-collections", async (req, res) => {
 );
 
 // ⚠️ TEMPORARY — ek dafa chala kar HATA dena
-router.get("/backfill-first-published", async (req, res) => {
-  try {
-    const docs = await Product.find({
-      firstPublishedAt: null,
-      shopifyPublishedAt: { $ne: null }
-    }).select("_id shopifyPublishedAt").lean();
+router.get("/backfill-collection-first-published", async (req, res) => {
 
-    let updated = 0;
-    for (const d of docs) {
-      await Product.updateOne(
-        { _id: d._id },
-        { $set: { firstPublishedAt: d.shopifyPublishedAt } }
-      );
-      updated++;
-    }
-    res.json({ success: true, updated });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  const docs =
+    await Collection.find({
+      firstPublishedAt: null
+    })
+      .select(
+        "_id shopifyPublishedAt shopifyCreatedAt"
+      )
+      .lean();
+
+  let updated = 0;
+
+  for (const d of docs) {
+
+    await Collection.updateOne(
+      { _id: d._id },
+      {
+        $set: {
+          firstPublishedAt:
+            d.shopifyPublishedAt ||
+            d.shopifyCreatedAt ||
+            null
+        }
+      }
+    );
+
+    updated++;
   }
+
+  res.json({
+    success: true,
+    updated
+  });
+
 });
 
 module.exports = router;
