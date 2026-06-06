@@ -2264,4 +2264,97 @@ router.get("/trending", async (req, res) => {
 
 });
 
+router.get("/trending-collections", async (req, res) => {
+  try {
+    const { store, shop } = req.query;
+    const rawStore = store || shop;
+
+    if (!rawStore) {
+      return res.json({ collections: [] });
+    }
+
+    // /trending jaisa store match
+    const cleanStore = normalizeDomain(rawStore);
+
+    const matchedStores = await Store.find({
+      domain: {
+        $regex: new RegExp(`^${escapeRegex(cleanStore)}$`, "i")
+      }
+    }).lean();
+
+    if (!matchedStores.length) {
+      return res.json({ collections: [] });
+    }
+
+    // LIVE FETCH FROM SHOPIFY (custom + smart)
+    const results = await Promise.all(
+      matchedStores.map(async (shopStore) => {
+        try {
+          const cleanDomain = shopStore.domain
+            .replace(/^https?:\/\//, "")
+            .replace(/\/$/, "");
+
+          const types = ["custom_collections", "smart_collections"];
+          const all = [];
+
+          for (const type of types) {
+            const response = await fetch(
+              `https://${cleanDomain}/admin/api/2026-04/${type}.json?limit=250`,
+              {
+                headers: {
+                  "X-Shopify-Access-Token": shopStore.accessToken,
+                  "Content-Type": "application/json"
+                }
+              }
+            );
+
+            if (!response.ok) continue;
+
+            const data = await response.json();
+            const list = Array.isArray(data[type]) ? data[type] : [];
+
+            list.forEach(c => {
+              all.push({
+                title: c.title || "",
+                handle: c.handle || "",
+                image: c.image?.src || "",
+                publishedAt: c.published_at || null,
+                productsCount: Number(c.products_count || 0),
+                timestamp: new Date(c.created_at || 0).getTime()
+              });
+            });
+          }
+
+          return all;
+        } catch (err) {
+          console.error(
+            "TRENDING COLLECTIONS FETCH ERROR:",
+            shopStore.domain,
+            err.message
+          );
+          return [];
+        }
+      })
+    );
+
+    // published + non-empty filter, phir latest (created) first
+    const collections = results
+      .flat()
+      .filter(c => c.publishedAt && c.handle && c.productsCount > 0)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 10)
+      .map(c => ({
+        title: c.title,
+        handle: c.handle,
+        image: c.image
+      }));
+
+    res.json({ collections });
+  } catch (err) {
+    console.error("TRENDING COLLECTIONS ERROR:", err);
+    res.status(500).json({ collections: [] });
+  }
+});
+
+
 module.exports = router;
