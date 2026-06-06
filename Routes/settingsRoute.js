@@ -424,6 +424,190 @@ router.get("/admin/synonyms/suggestions", async (req, res) => {
 });
 
 // ============================================================
+// AUTO-SYNONYM DETECTION
+// ============================================================
+
+// POST /api/admin/synonyms/auto-detect
+// Analyzes click behavior: which products users click for each query →
+// extracts common tags from those products → saves as synonym candidates
+//
+// body: {
+//   shop,
+//   threshold: 10,    // min total clicks on a query before analyzing (default 10)
+//   days: 30,         // analytics window (default 30)
+//   autoSave: false   // false = preview only, true = save to DB automatically
+// }
+router.post("/admin/synonyms/auto-detect", async (req, res) => {
+  try {
+    const { shop, threshold = 10, days = 30, autoSave = false } = req.body;
+    if (!shop) return res.status(400).json({ error: "Shop required" });
+
+    const store = normalizeStoreDomain(shop);
+    const since = new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
+    const minClicks = Math.max(1, Number(threshold));
+
+    // ─────────────────────────────────────────────────────────
+    // STEP 1: Queries with >= threshold total clicks
+    //         Collect all productIds clicked per query
+    // ─────────────────────────────────────────────────────────
+    const queryClickData = await Analytics.aggregate([
+      {
+        $match: {
+          store,
+          type: "click",
+          productId: { $exists: true, $ne: null },
+          normalizedQuery: { $exists: true, $ne: "" },
+          createdAt: { $gte: since }
+        }
+      },
+      {
+        $group: {
+          _id: "$normalizedQuery",
+          totalClicks: { $sum: 1 },
+          productIds:  { $addToSet: "$productId" }
+        }
+      },
+      { $match: { totalClicks: { $gte: minClicks } } },
+      { $sort: { totalClicks: -1 } },
+      { $limit: 100 }
+    ]);
+
+    if (!queryClickData.length) {
+      return res.json({
+        detected: [],
+        saved: [],
+        total: 0,
+        message: `No queries found with ${minClicks}+ clicks in last ${days} days`
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // STEP 2: Fetch tags for all clicked products
+    // ─────────────────────────────────────────────────────────
+    const allProductIds = [...new Set(queryClickData.flatMap(q => q.productIds))];
+
+    const productDocs = await Product.find({
+      store,
+      productId: { $in: allProductIds }
+    }).select("productId tags").lean();
+
+    const productTagMap = {};
+    productDocs.forEach(p => {
+      productTagMap[String(p.productId)] = (p.tags || []).map(t => t.toLowerCase().trim());
+    });
+
+    // ─────────────────────────────────────────────────────────
+    // STEP 3: For each query, find tags that appear in >= 2
+    //         distinct clicked products AND are NOT related
+    //         to the query itself
+    // ─────────────────────────────────────────────────────────
+    const isRelatedToQuery = (word, queryTokens) =>
+      queryTokens.some(qt =>
+        word === qt ||
+        word.includes(qt) ||
+        qt.includes(word) ||
+        // Prefix similarity: "kameez" / "kamees" → skip (same root)
+        (word.length >= 4 && qt.length >= 4 && word.slice(0, 4) === qt.slice(0, 4))
+      );
+
+    const detected = [];
+
+    for (const qData of queryClickData) {
+      const query = qData._id;
+      const queryTokens = query.split(/\s+/).filter(Boolean);
+
+      // Count how many distinct products have each tag for this query
+      const tagToProducts = {}; // tag → Set of productIds
+
+      qData.productIds.forEach(productId => {
+        const tags = productTagMap[String(productId)] || [];
+        tags.forEach(tag => {
+          if (!tag || tag.length < 3) return;
+          if (isRelatedToQuery(tag, queryTokens)) return;
+
+          if (!tagToProducts[tag]) tagToProducts[tag] = new Set();
+          tagToProducts[tag].add(String(productId));
+        });
+      });
+
+      // Keep only tags confirmed by >= 2 products
+      const candidates = Object.entries(tagToProducts)
+        .filter(([, pSet]) => pSet.size >= 2)
+        .sort((a, b) => b[1].size - a[1].size)
+        .slice(0, 5)
+        .map(([word, pSet]) => ({
+          word,
+          supportingProducts: pSet.size,
+          // Confidence = fraction of clicked products that have this tag (max 1.0)
+          confidence: parseFloat(
+            Math.min(pSet.size / Math.max(qData.productIds.length, 1), 1).toFixed(2)
+          )
+        }));
+
+      if (candidates.length) {
+        detected.push({
+          query,
+          totalClicks:    qData.totalClicks,
+          clickedProducts: qData.productIds.length,
+          candidates
+        });
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // STEP 4: Auto-save if requested
+    //         Never overwrite existing manual (autoGenerated: false) words
+    // ─────────────────────────────────────────────────────────
+    const saved = [];
+
+    if (autoSave && detected.length) {
+      for (const item of detected) {
+        const existing = await Synonym.findOne({ store, query: item.query }).lean();
+        const existingWords = new Set((existing?.synonyms || []).map(s => s.word));
+
+        // Only add words that don't already exist
+        const newSynObjects = item.candidates
+          .filter(c => !existingWords.has(c.word))
+          .map(c => ({
+            word:          c.word,
+            usageCount:    c.supportingProducts,
+            autoGenerated: true,
+            confidence:    c.confidence
+          }));
+
+        if (!newSynObjects.length) continue;
+
+        if (existing) {
+          await Synonym.updateOne(
+            { store, query: item.query },
+            { $push: { synonyms: { $each: newSynObjects } } }
+          );
+        } else {
+          await Synonym.create({ store, query: item.query, synonyms: newSynObjects });
+        }
+
+        saved.push({
+          query:      item.query,
+          addedWords: newSynObjects.map(w => w.word)
+        });
+      }
+    }
+
+    res.json({
+      detected,
+      saved:   autoSave ? saved : [],
+      total:   detected.length,
+      message: autoSave
+        ? `${saved.length} synonym mapping(s) saved/updated`
+        : `${detected.length} synonym candidate(s) found — pass autoSave: true to save them`
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
 // SEARCH PERFORMANCE ANALYTICS
 // ============================================================
 

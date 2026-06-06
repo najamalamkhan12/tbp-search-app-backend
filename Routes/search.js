@@ -30,13 +30,11 @@ const toTime = (value) => {
 };
 
 const latestProductTime = (product = {}) =>
-  // Republish should not make an old product fresh again.
   toTime(product.firstPublishedAt) ||
-  toTime(product.shopifyCreatedAt);
+  toTime(product.shopifyPublishedAt);
 
 const latestCollectionTime = (collection = {}) =>
-  // shopifyPublishedAt reflects most recent publish — recently published collections rank higher
-  toTime(collection.shopifyPublishedAt) ||
+  // firstPublishedAt is stable — does not change on republish (shopifyPublishedAt changes on every toggle)
   toTime(collection.firstPublishedAt) ||
   toTime(collection.shopifyCreatedAt);
 
@@ -141,7 +139,7 @@ router.get("/search", async (req, res) => {
         })
           .sort({
             firstPublishedAt: -1,
-            shopifyCreatedAt: -1
+            shopifyPublishedAt: -1
           })
           .limit(20)
           .lean();
@@ -484,7 +482,7 @@ router.get("/search", async (req, res) => {
       })
         .sort({
           firstPublishedAt: -1,
-          shopifyCreatedAt: -1
+          shopifyPublishedAt: -1
         })
         .limit(300)
         .lean()
@@ -525,7 +523,7 @@ router.get("/search", async (req, res) => {
           }
         }).sort({
           firstPublishedAt: -1,
-          shopifyCreatedAt: -1
+          shopifyPublishedAt: -1
         })
           .limit(300)
           .lean();
@@ -574,7 +572,7 @@ router.get("/search", async (req, res) => {
         })
           .sort({
             firstPublishedAt: -1,
-            shopifyCreatedAt: -1
+            shopifyPublishedAt: -1
           })
           .limit(2000)
           .lean()
@@ -1121,7 +1119,7 @@ router.get("/search", async (req, res) => {
         })
           .sort({
             firstPublishedAt: -1,
-            shopifyCreatedAt: -1
+            shopifyPublishedAt: -1
           })
           .limit(50)
           .lean();
@@ -1151,7 +1149,7 @@ router.get("/search", async (req, res) => {
       })
         .sort({
           firstPublishedAt: -1,
-          shopifyCreatedAt: -1
+          shopifyPublishedAt: -1
         })
         .limit(20)
         .lean();
@@ -2118,7 +2116,7 @@ router.get("/trending", async (req, res) => {
       store: cleanStore,
       status: "ACTIVE"
     })
-      .sort({ firstPublishedAt: -1, shopifyCreatedAt: -1 })
+      .sort({ firstPublishedAt: -1, shopifyPublishedAt: -1 })
       .limit(500)
       .lean()
       .select(
@@ -2264,8 +2262,8 @@ router.get("/trending-collections", async (req, res) => {
       })
     })
       .sort({
-        shopifyPublishedAt: -1,
-        shopifyCreatedAt: -1
+        firstPublishedAt: -1,
+        shopifyPublishedAt: -1
       })
       .limit(20)
       .lean();
