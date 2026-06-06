@@ -907,15 +907,23 @@ router.post("/sync-collections", async (req, res) => {
 }
 );
 
-
 // ⚠️ TEMPORARY — ek dafa chala kar HATA dena
 router.get("/backfill-first-published", async (req, res) => {
   try {
-    const result = await Product.updateMany(
-      { firstPublishedAt: null, shopifyPublishedAt: { $ne: null } },
-      [ { $set: { firstPublishedAt: "$shopifyPublishedAt" } } ]
-    );
-    res.json({ success: true, updated: result.modifiedCount });
+    const docs = await Product.find({
+      firstPublishedAt: null,
+      shopifyPublishedAt: { $ne: null }
+    }).select("_id shopifyPublishedAt").lean();
+
+    let updated = 0;
+    for (const d of docs) {
+      await Product.updateOne(
+        { _id: d._id },
+        { $set: { firstPublishedAt: d.shopifyPublishedAt } }
+      );
+      updated++;
+    }
+    res.json({ success: true, updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
