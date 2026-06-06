@@ -924,12 +924,26 @@ router.get("/backfill-collection-first-published", async (req, res) => {
 
   const docs =
     await Collection.find({
-      firstPublishedAt: null
+      $or: [
+        {
+          firstPublishedAt: null
+        },
+        {
+          firstPublishedAt: {
+            $exists: false
+          }
+        }
+      ]
     })
       .select(
         "_id shopifyPublishedAt shopifyCreatedAt"
       )
       .lean();
+
+  console.log(
+    "COLLECTIONS TO BACKFILL:",
+    docs.length
+  );
 
   let updated = 0;
 
@@ -952,7 +966,8 @@ router.get("/backfill-collection-first-published", async (req, res) => {
 
   res.json({
     success: true,
-    updated
+    updated,
+    found: docs.length
   });
 
 });
